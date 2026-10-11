@@ -15,7 +15,9 @@ class PetWindow(QWidget):
     """The small desktop companion shown outside the main dashboard."""
 
     WINDOW_SIZE = 300
-    CHARACTER_RECT = QRectF(54, 84, 192, 184)
+    # A square canvas suits full-body character illustrations and prevents
+    # portrait assets from being squeezed into the former shallow rectangle.
+    CHARACTER_RECT = QRectF(40, 68, 220, 220)
 
     def __init__(self) -> None:
         super().__init__()
@@ -163,9 +165,21 @@ class PetWindow(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         if self._frames:
-            painter.drawPixmap(self.CHARACTER_RECT.toRect(), self._frames[self._frame_index])
+            self._draw_character_frame(painter, self._frames[self._frame_index])
         else:
             self._paint_fallback_cat(painter)
+
+    def _draw_character_frame(self, painter: QPainter, frame: QPixmap) -> None:
+        """Draw a frame at its natural aspect ratio, aligned to the baseline."""
+        target = self.CHARACTER_RECT.toRect()
+        scaled = frame.scaled(
+            target.size(),
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        x = target.x() + (target.width() - scaled.width()) // 2
+        y = target.bottom() - scaled.height() + 1
+        painter.drawPixmap(x, y, scaled)
 
     def _paint_fallback_cat(self, painter: QPainter) -> None:
         """A visible starter mascot while the project awaits character PNGs."""
