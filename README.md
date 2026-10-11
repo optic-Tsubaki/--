@@ -15,6 +15,17 @@ Place optional character images in `resources/images/` as `idle.png`, `happy.png
 `focus.png`, or `sleep.png`. A transparent PNG is recommended. Until images are
 provided, StudyPet renders a small built-in starter mascot.
 
+## Data and AI configuration
+
+StudyPet keeps user-created files outside the application folder so packaging the
+app does not put writable data beside the executable. On Windows the application
+uses `%LOCALAPPDATA%\\StudyPet\\` for settings, the SQLite database, and logs.
+
+AI provider metadata (provider, base URL, and model) is stored in a JSON settings
+file. API keys are deliberately excluded from that file and are stored through
+the operating system credential store when AI configuration is added to the UI.
+The application remains usable without any AI provider configured.
+
 ## Run
 
 ```powershell
