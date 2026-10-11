@@ -12,8 +12,10 @@ The first prototype provides a transparent, borderless, always-on-top pet window
 - Right-click it to change its state, hide it, or exit.
 
 Place optional character images in `resources/images/` as `idle.png`, `happy.png`,
-`focus.png`, or `sleep.png`. A transparent PNG is recommended. Until images are
-provided, StudyPet renders a small built-in starter mascot.
+`focus.png`, or `sleep.png`. For a loop, use ordered frames such as
+`idle_01.png`, `idle_02.png`, and `idle_03.png`; the window plays them at roughly
+four frames per second. Use transparent PNGs. Until images are provided, StudyPet
+renders a small built-in starter mascot.
 
 ## Data and AI configuration
 

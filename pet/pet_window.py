@@ -31,7 +31,11 @@ class PetWindow(QWidget):
         self._drag_offset: QPoint | None = None
         self._dragged = False
         self._state = PetState.IDLE
-        self._pixmap = self._load_character_image(PetState.IDLE)
+        self._frames: list[QPixmap] = []
+        self._frame_index = 0
+        self._animation_timer = QTimer(self)
+        self._animation_timer.timeout.connect(self._advance_animation)
+        self._load_character_frames(PetState.IDLE)
         self._controller = PetController(self._set_state, self.speak)
 
         self._bubble = QLabel(self)
@@ -71,14 +75,31 @@ class PetWindow(QWidget):
 
     def _set_state(self, state: PetState) -> None:
         self._state = state
-        self._pixmap = self._load_character_image(state)
+        self._load_character_frames(state)
         self.update()
 
-    def _load_character_image(self, state: PetState) -> QPixmap | None:
-        """Load a supplied PNG state image; use the built-in drawing until art exists."""
-        image_path = Path(__file__).parent.parent / "resources" / "images" / f"{state}.png"
-        pixmap = QPixmap(str(image_path))
-        return pixmap if not pixmap.isNull() else None
+    def _load_character_frames(self, state: PetState) -> None:
+        """Load ordered PNG frames for a state and start their animation loop."""
+        images_dir = Path(__file__).parent.parent / "resources" / "images"
+        frame_paths = sorted(images_dir.glob(f"{state}_*.png"))
+        if not frame_paths:
+            single_frame = images_dir / f"{state}.png"
+            frame_paths = [single_frame] if single_frame.exists() else []
+
+        self._frames = [QPixmap(str(path)) for path in frame_paths]
+        self._frames = [frame for frame in self._frames if not frame.isNull()]
+        self._frame_index = 0
+        if len(self._frames) > 1:
+            self._animation_timer.start(260)
+        else:
+            self._animation_timer.stop()
+
+    def _advance_animation(self) -> None:
+        if not self._frames:
+            self._animation_timer.stop()
+            return
+        self._frame_index = (self._frame_index + 1) % len(self._frames)
+        self.update()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
@@ -141,8 +162,8 @@ class PetWindow(QWidget):
     def paintEvent(self, event) -> None:  # type: ignore[override]
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        if self._pixmap is not None:
-            painter.drawPixmap(self.CHARACTER_RECT.toRect(), self._pixmap)
+        if self._frames:
+            painter.drawPixmap(self.CHARACTER_RECT.toRect(), self._frames[self._frame_index])
         else:
             self._paint_fallback_cat(painter)
 

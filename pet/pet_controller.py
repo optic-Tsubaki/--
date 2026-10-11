@@ -37,3 +37,7 @@ class PetController:
 
     def speak(self, message: str) -> None:
         self._on_speak(message)
+
+    def play_animation(self, state: PetState) -> None:
+        """Request the named visual state without exposing UI details to callers."""
+        self.set_state(state)
