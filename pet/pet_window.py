@@ -17,7 +17,7 @@ class PetWindow(QWidget):
     WINDOW_SIZE = 300
     # A square canvas suits full-body character illustrations and prevents
     # portrait assets from being squeezed into the former shallow rectangle.
-    CHARACTER_RECT = QRectF(40, 68, 220, 220)
+    CHARACTER_RECT = QRectF(32, 62, 236, 236)
 
     def __init__(self) -> None:
         super().__init__()
@@ -175,7 +175,9 @@ class PetWindow(QWidget):
         scaled = frame.scaled(
             target.size(),
             Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
+            # Desktop pets are small; preserve the strong ink edges instead of
+            # blurring the illustration during downscaling.
+            Qt.TransformationMode.FastTransformation,
         )
         x = target.x() + (target.width() - scaled.width()) // 2
         y = target.bottom() - scaled.height() + 1
