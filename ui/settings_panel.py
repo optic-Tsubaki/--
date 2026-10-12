@@ -5,6 +5,7 @@ from __future__ import annotations
 from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QComboBox,
+    QCheckBox,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -103,6 +104,9 @@ class SettingsPanel(QWidget):
         form.addRow("模型名称：", self._model)
         form.addRow("API Key：", self._api_key)
         layout.addLayout(form)
+        self._use_chat_history = QCheckBox("允许将近期本地聊天记录发送给当前 AI，作为对话上下文")
+        self._use_chat_history.setToolTip("默认关闭。启用后，近期聊天会随请求发送给你选择的 AI 服务商。")
+        layout.addWidget(self._use_chat_history)
 
         self._status = QLabel()
         self._status.setWordWrap(True)
@@ -124,6 +128,7 @@ class SettingsPanel(QWidget):
         self._provider.setCurrentIndex(max(index, 0))
         self._base_url.setText(settings.ai.base_url)
         self._model.setText(settings.ai.model)
+        self._use_chat_history.setChecked(settings.ai.use_chat_history)
         self._api_key.clear()
         self._refresh_enabled_state()
 
@@ -133,6 +138,7 @@ class SettingsPanel(QWidget):
             provider=provider,
             base_url=self._base_url.text().strip(),
             model=self._model.text().strip(),
+            use_chat_history=self._use_chat_history.isChecked(),
         )
         try:
             config.validate()
@@ -150,7 +156,7 @@ class SettingsPanel(QWidget):
 
     def _refresh_enabled_state(self) -> None:
         enabled = self._provider.currentData() is not ProviderKind.NONE
-        for widget in (self._base_url, self._model, self._api_key):
+        for widget in (self._base_url, self._model, self._api_key, self._use_chat_history):
             widget.setEnabled(enabled)
         if not self._credentials.is_available and enabled:
             self._status.setText("尚未安装 keyring；保存 API Key 前请安装 requirements.txt 中的依赖。")

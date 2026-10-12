@@ -22,6 +22,7 @@ class AIConfig:
     provider: ProviderKind = ProviderKind.NONE
     base_url: str = ""
     model: str = ""
+    use_chat_history: bool = False
 
     @property
     def is_enabled(self) -> bool:
@@ -37,7 +38,7 @@ class AIConfig:
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("AI base URL must be a complete HTTP or HTTPS URL.")
 
-    def to_dict(self) -> dict[str, str]:
+    def to_dict(self) -> dict[str, object]:
         """Return safe-to-persist fields only; no secret can enter this output."""
         return asdict(self)
 
@@ -54,4 +55,5 @@ class AIConfig:
             provider=provider,
             base_url=str(value.get("base_url", "")),
             model=str(value.get("model", "")),
+            use_chat_history=value.get("use_chat_history") is True,
         )

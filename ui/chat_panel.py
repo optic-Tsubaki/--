@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import html
 
 from PyQt6.QtCore import QThread, pyqtSignal
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QTextEdit, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QMessageBox, QPlainTextEdit, QPushButton, QTextEdit, QVBoxLayout, QWidget
 
 from ai.provider_manager import ProviderManager
 from ai.providers.base import ChatMessage
+from core.chat_history import ChatHistory
+from core.app_paths import AppPaths
 from config.settings_service import SettingsService
 from security.credential_store import CredentialStore
 
@@ -34,17 +38,22 @@ class ChatWorker(QThread):
 
 
 class ChatPanel(QWidget):
-    """A short-lived conversation UI; persistence and memory come in a later phase."""
+    """本地保留聊天记录的非阻塞 AI 对话界面。"""
 
     def __init__(self, settings_service: SettingsService, credentials: CredentialStore) -> None:
         super().__init__()
         self._settings_service = settings_service
         self._credentials = credentials
+        paths = AppPaths.for_project(Path(__file__).resolve().parents[1])
+        paths.ensure_exists()
+        self._chat_history = ChatHistory(paths.database_file)
+        self._stored_history = self._chat_history.recent()
         self._messages: list[ChatMessage] = [
             ChatMessage("system", "你是 StudyPet，一位温柔、简洁的学习与工作陪伴助手。")
         ]
         self._worker: ChatWorker | None = None
         self._build_ui()
+        self._restore_local_history()
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -67,6 +76,9 @@ class ChatPanel(QWidget):
         self._send = QPushButton("发送")
         self._send.clicked.connect(self._send_message)
         actions.addStretch()
+        self._clear_history = QPushButton("清空本地记录")
+        self._clear_history.clicked.connect(self._clear_local_history)
+        actions.addWidget(self._clear_history)
         actions.addWidget(self._send)
         layout.addLayout(actions)
 
@@ -75,11 +87,18 @@ class ChatPanel(QWidget):
         if not text or self._worker is not None:
             return
         self._messages.append(ChatMessage("user", text))
+        self._chat_history.add("user", text)
         self._append("你", text)
         self._input.clear()
         self._send.setEnabled(False)
         settings = self._settings_service.load()
-        self._worker = ChatWorker(ProviderManager(settings.ai, self._credentials), list(self._messages))
+        request_messages = list(self._messages)
+        if settings.ai.use_chat_history:
+            request_messages = [self._messages[0]]
+            request_messages.extend(
+                ChatMessage(item.role, item.content) for item in self._chat_history.recent()
+            )
+        self._worker = ChatWorker(ProviderManager(settings.ai, self._credentials), request_messages)
         self._worker.completed.connect(self._chat_completed)
         self._worker.failed.connect(self._chat_failed)
         self._worker.finished.connect(self._worker_finished)
@@ -87,15 +106,39 @@ class ChatPanel(QWidget):
 
     def _chat_completed(self, reply: str) -> None:
         self._messages.append(ChatMessage("assistant", reply))
+        self._chat_history.add("assistant", reply)
         self._append("StudyPet", reply)
 
     def _chat_failed(self, error: str) -> None:
-        self._messages.pop()  # Let the user retry the unchanged message.
+        failed_message = self._messages.pop().content  # Let the user retry the unchanged message.
+        self._chat_history.remove_latest("user", failed_message)
         self._append("提示", error)
 
     def _worker_finished(self) -> None:
         self._send.setEnabled(True)
         self._worker = None
+
+    def _clear_local_history(self) -> None:
+        if self._worker is not None:
+            return
+        answer = QMessageBox.question(
+            self,
+            "清空本地聊天记录",
+            "确定清空这台电脑上的全部聊天记录吗？此操作无法撤销。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self._chat_history.clear()
+        self._stored_history = []
+        self._messages = self._messages[:1]
+        self._history.clear()
+
+    def _restore_local_history(self) -> None:
+        for item in self._stored_history:
+            speaker = "你" if item.role == "user" else "StudyPet"
+            self._append(speaker, item.content)
 
     def _append(self, speaker: str, content: str) -> None:
         self._history.append(f"<b>{html.escape(speaker)}</b><br>{html.escape(content).replace(chr(10), '<br>')}<br>")
