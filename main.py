@@ -21,12 +21,19 @@ from security.credential_store import CredentialStore
 from ui.dashboard import Dashboard
 
 
+def application_root() -> Path:
+    """Return the source root in development and the executable folder when frozen."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
 def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("StudyPet AI")
     app.setOrganizationName("StudyPet")
 
-    paths = AppPaths.for_project(Path(__file__).resolve().parent)
+    paths = AppPaths.for_project(application_root())
     paths.ensure_exists()
     configure_runtime_logging(paths.logs_dir)
     StudyPetDatabase(paths.database_file)

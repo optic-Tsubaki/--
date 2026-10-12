@@ -92,7 +92,8 @@ class Dashboard(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(22, 22, 22, 22)
         layout.setSpacing(16)
-        layout.addWidget(self._build_header())
+        self._header = self._build_header()
+        layout.addWidget(self._header)
         layout.addWidget(self._tabs)
 
         self._ticker = QTimer(self)
@@ -108,6 +109,7 @@ class Dashboard(QDialog):
         self._build_reminders_tab()
         self._build_home_tab()
         self._tabs.tabBar().hide()
+        self._tabs.currentChanged.connect(self._update_home_button)
         self._install_task_delete_column()
         self._task_table.setToolTip("选中任务后可按 Delete 删除")
         self._delete_task_action = QAction("删除所选任务", self._task_table)
@@ -119,6 +121,7 @@ class Dashboard(QDialog):
         self._task_delete_shortcut.activated.connect(self._delete_selected_task)
         self._refresh_all()
         self._tabs.setCurrentWidget(self._home_page)
+        self._update_home_button()
 
     def _apply_style(self) -> None:
         """A compact dark-mint visual system shared by every dashboard tab."""
@@ -129,6 +132,8 @@ class Dashboard(QDialog):
             QLabel#appTitle { color: #FFFFFF; font-size: 25px; font-weight: 700; }
             QLabel#appSubtitle { color: #BBD2CD; font-size: 12px; }
             QLabel#statusPill { background: #C9F36A; color: #234039; border-radius: 11px; padding: 5px 11px; font-weight: 600; }
+            QPushButton#homeButton { background: rgba(255, 255, 255, 0.14); color: #FFFFFF; border: 1px solid rgba(255, 255, 255, 0.32); border-radius: 10px; padding: 7px 11px; }
+            QPushButton#homeButton:hover { background: rgba(255, 255, 255, 0.25); }
             QTabWidget::pane { background: #FFFFFF; border: 1px solid #DCE9E5; border-radius: 16px; top: -1px; }
             QTabBar::tab { background: transparent; color: #637571; padding: 10px 14px; margin-right: 4px; font-weight: 600; }
             QTabBar::tab:selected { color: #193C37; border-bottom: 3px solid #5FC8A6; }
@@ -161,8 +166,12 @@ class Dashboard(QDialog):
         text_layout.addWidget(subtitle)
         status = QLabel("● 本地优先")
         status.setObjectName("statusPill")
+        self._home_button = QPushButton("← 功能首页")
+        self._home_button.setObjectName("homeButton")
+        self._home_button.clicked.connect(self.open_home)
         header_layout.addLayout(text_layout)
         header_layout.addStretch()
+        header_layout.addWidget(self._home_button, alignment=Qt.AlignmentFlag.AlignTop)
         header_layout.addWidget(status, alignment=Qt.AlignmentFlag.AlignTop)
         return header
 
@@ -173,6 +182,9 @@ class Dashboard(QDialog):
         self.show()
         self.raise_()
         self.activateWindow()
+
+    def _update_home_button(self) -> None:
+        self._home_button.setVisible(self._tabs.currentWidget() is not self._home_page)
 
     def _build_tasks_tab(self) -> None:
         page = QWidget()
