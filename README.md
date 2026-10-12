@@ -30,6 +30,10 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 
 构建完成后，从 `release\StudyPet\StudyPet.exe` 启动。Windows 桌面快捷方式可指向此文件，并会使用 StudyPet 专属图标。
 
+### 发布给其他人
+
+构建会同时生成 `release\StudyPet-Windows.zip`。将这个 ZIP 上传为 GitHub Release 附件即可；下载者解压后会直接看到 `START StudyPet.exe` 和 `README-START-HERE.txt`。`START StudyPet.exe` 必须与同目录的 `_internal` 文件夹保留在一起。
+
 ## 数据与隐私
 
 程序会在运行位置创建 `data\` 文件夹：
