@@ -118,13 +118,14 @@ class PetWindow(QWidget):
 
     def _apply_state(self, state: PetState) -> None:
         self._state = state
-        # Greeting and celebration only transform the already visible vector
-        # character.  Reloading an SVG renderer for a simple click reaction is
-        # unnecessary and can be fragile in a frozen Qt application.
-        if state not in {PetState.GREETING, PetState.CELEBRATE}:
-            self._load_character_frames(state)
-        elif self._svg_renderer is None and not self._frames:
-            self._load_character_frames(PetState.IDLE)
+        # Interaction-only states intentionally borrow a real animated state:
+        # a greeting keeps the quiet idle loop, while a completed task plays
+        # the dedicated happy jump frames.
+        asset_state = {
+            PetState.GREETING: PetState.IDLE,
+            PetState.CELEBRATE: PetState.HAPPY,
+        }.get(state, state)
+        self._load_character_frames(asset_state)
         self.update()
 
     def _show_temporary_state(
@@ -173,12 +174,8 @@ class PetWindow(QWidget):
             return True
 
         self._svg_renderer = None
-        # Render the supplied SVG directly on the widget. This preserves its
-        # vector edges instead of first rasterizing it into a small QPixmap.
-        if state is PetState.IDLE and load_vector_idle():
-            return
-
-        # PNG frames remain available for animation states and as a fallback.
+        # State-specific PNG frame sequences take priority.  The original SVG
+        # remains a crisp fallback when a release is missing its art assets.
         candidates: list[list[Path]] = []
         png_frames = sorted(images_dir.glob(f"{state}_*.png"))
         if png_frames:
@@ -199,7 +196,11 @@ class PetWindow(QWidget):
             return
         self._frame_index = 0
         if len(self._frames) > 1:
-            self._animation_timer.start(260)
+            # Slower breathing/sleep cycles, with quicker feedback for focus
+            # and happy actions, keep the pixel animation readable.
+            self._animation_timer.start(
+                440 if state in {PetState.IDLE, PetState.SLEEP} else 240
+            )
         else:
             self._animation_timer.stop()
 
