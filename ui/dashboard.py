@@ -381,7 +381,11 @@ class Dashboard(QDialog):
 
         for reminder in due_reminders:
             if self._on_reminder_due is not None:
-                self._on_reminder_due(reminder.message)
+                try:
+                    self._on_reminder_due(reminder.message)
+                except Exception:
+                    # 提醒功能不能影响正在运行的桌宠；提醒已被安全领取。
+                    QMessageBox.information(self, "学习提醒", reminder.message)
         self._refresh_reminders()
 
     def _refresh_session_table(self) -> None:

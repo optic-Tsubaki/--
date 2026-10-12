@@ -92,7 +92,7 @@ class PetWindow(QWidget):
 
     def show_reminder(self, message: str) -> None:
         self._controller.set_state(PetState.HAPPY)
-        self.speak(f"提醒你：{message}", duration=7_000)
+        self.speak(f"提醒你：{message}")
         QTimer.singleShot(5_200, lambda: self._controller.set_state(PetState.IDLE))
 
     def finish_focus_session(self, duration_seconds: int) -> None:
