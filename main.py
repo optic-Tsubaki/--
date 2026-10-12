@@ -9,7 +9,12 @@ from PyQt6.QtWidgets import QApplication
 from ai.provider_manager import ProviderManager
 from config.settings_service import SettingsService
 from core.app_paths import AppPaths
+from core.task_manager import TaskManager
+from core.timer import FocusTimer
+from database.sqlite import StudyPetDatabase
 from pet.pet_window import PetWindow
+from security.credential_store import CredentialStore
+from ui.dashboard import Dashboard
 
 
 def main() -> int:
@@ -19,11 +24,16 @@ def main() -> int:
 
     paths = AppPaths.for_current_user()
     paths.ensure_exists()
-    settings = SettingsService(paths.settings_file).load()
+    StudyPetDatabase(paths.database_file)
+    settings_service = SettingsService(paths.settings_file)
+    settings = settings_service.load()
     # The rest of V0.1 can run in ordinary mode when this has no AI configuration.
     ProviderManager(settings.ai)
 
-    window = PetWindow()
+    task_manager = TaskManager(paths.database_file)
+    focus_timer = FocusTimer(paths.database_file)
+    dashboard = Dashboard(task_manager, focus_timer, settings_service, CredentialStore())
+    window = PetWindow(on_open_dashboard=dashboard.open_section)
     window.show()
     return app.exec()
 

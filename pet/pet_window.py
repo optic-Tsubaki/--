@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
+from typing import Callable
 
 from PyQt6.QtCore import QPoint, QRectF, Qt, QTimer
 from PyQt6.QtGui import QAction, QColor, QGuiApplication, QMouseEvent, QPainter, QPainterPath, QPen, QPixmap, QPolygon
@@ -20,7 +22,7 @@ class PetWindow(QWidget):
     # portrait assets from being squeezed into the former shallow rectangle.
     CHARACTER_RECT = QRectF(32, 62, 236, 236)
 
-    def __init__(self) -> None:
+    def __init__(self, on_open_dashboard: Callable[[str], None] | None = None) -> None:
         super().__init__()
         self.setFixedSize(self.WINDOW_SIZE, self.WINDOW_SIZE)
         self.setWindowFlags(
@@ -33,12 +35,18 @@ class PetWindow(QWidget):
 
         self._drag_offset: QPoint | None = None
         self._dragged = False
+        self._on_open_dashboard = on_open_dashboard
         self._state = PetState.IDLE
         self._frames: list[QPixmap] = []
         self._svg_renderer: QSvgRenderer | None = None
         self._frame_index = 0
         self._animation_timer = QTimer(self)
         self._animation_timer.timeout.connect(self._advance_animation)
+        self._idle_phase = 0.0
+        self._life_timer = QTimer(self)
+        self._life_timer.setInterval(50)
+        self._life_timer.timeout.connect(self._advance_idle_motion)
+        self._life_timer.start()
         self._load_character_frames(PetState.IDLE)
         self._controller = PetController(self._set_state, self.speak)
 
@@ -88,17 +96,23 @@ class PetWindow(QWidget):
         project_root = images_dir.parent.parent
         vector_idle = project_root / "图片" / "霓虹狐耳 chibi 少女贴纸.svg"
 
+        def load_vector_idle() -> bool:
+            if not vector_idle.exists():
+                return False
+            renderer = QSvgRenderer(str(vector_idle), self)
+            if not renderer.isValid():
+                return False
+            self._frames = []
+            self._frame_index = 0
+            self._svg_renderer = renderer
+            self._animation_timer.stop()
+            return True
+
         self._svg_renderer = None
         # Render the supplied SVG directly on the widget. This preserves its
         # vector edges instead of first rasterizing it into a small QPixmap.
-        if state is PetState.IDLE and vector_idle.exists():
-            renderer = QSvgRenderer(str(vector_idle), self)
-            if renderer.isValid():
-                self._frames = []
-                self._frame_index = 0
-                self._svg_renderer = renderer
-                self._animation_timer.stop()
-                return
+        if state is PetState.IDLE and load_vector_idle():
+            return
 
         # PNG frames remain available for animation states and as a fallback.
         candidates: list[list[Path]] = []
@@ -117,6 +131,8 @@ class PetWindow(QWidget):
             if loaded_frames:
                 self._frames = loaded_frames
                 break
+        if not self._frames and load_vector_idle():
+            return
         self._frame_index = 0
         if len(self._frames) > 1:
             self._animation_timer.start(260)
@@ -129,6 +145,12 @@ class PetWindow(QWidget):
             return
         self._frame_index = (self._frame_index + 1) % len(self._frames)
         self.update()
+
+    def _advance_idle_motion(self) -> None:
+        """Keep the vector companion gently alive without a separate sprite sheet."""
+        if self._state is PetState.IDLE and self._svg_renderer is not None:
+            self._idle_phase = (self._idle_phase + 0.11) % math.tau
+            self.update()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
@@ -156,16 +178,14 @@ class PetWindow(QWidget):
             self._drag_offset = None
             self.setCursor(Qt.CursorShape.OpenHandCursor)
             if not self._dragged:
-                self._controller.set_state(PetState.HAPPY)
-                self._controller.speak("你好！今天也一起努力吧！")
-                QTimer.singleShot(1800, lambda: self._controller.set_state(PetState.IDLE))
+                self._show_quick_menu(event.globalPosition().toPoint())
             event.accept()
             return
         super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
-            self.speak("控制面板会在 V0.2 到来：任务、计时和统计。")
+            self._open_dashboard("tasks")
             event.accept()
             return
         super().mouseDoubleClickEvent(event)
@@ -187,6 +207,34 @@ class PetWindow(QWidget):
         exit_action = menu.addAction("退出 StudyPet")
         exit_action.triggered.connect(self.close)
         menu.exec(event.globalPosition().toPoint())
+
+    def _show_quick_menu(self, position: QPoint) -> None:
+        """Show the V0.1 shortcuts promised by the desktop-pet interaction."""
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            "QMenu { background: #fefcff; border: 1px solid #b8d9ca; border-radius: 10px; "
+            "padding: 6px; font-family: 'Microsoft YaHei UI'; } "
+            "QMenu::item { padding: 8px 28px 8px 12px; border-radius: 6px; } "
+            "QMenu::item:selected { background: #dff6e9; }"
+        )
+        greeting = menu.addAction("今天也一起努力吧！")
+        greeting.setEnabled(False)
+        menu.addSeparator()
+
+        chat_action = menu.addAction("聊天")
+        chat_action.triggered.connect(lambda: self.speak("AI 聊天将在完成设置界面后启用。"))
+        for label, section in (("今日任务", "tasks"), ("开始计时", "timer"), ("学习统计", "stats")):
+            action = menu.addAction(label)
+            action.triggered.connect(lambda checked=False, value=section: self._open_dashboard(value))
+        settings_action = menu.addAction("设置")
+        settings_action.triggered.connect(lambda: self._open_dashboard("settings"))
+        menu.exec(position)
+
+    def _open_dashboard(self, section: str) -> None:
+        if self._on_open_dashboard is None:
+            self.speak("控制面板尚未准备好。")
+            return
+        self._on_open_dashboard(section)
 
     def paintEvent(self, event) -> None:  # type: ignore[override]
         painter = QPainter(self)
@@ -220,8 +268,10 @@ class PetWindow(QWidget):
         painter.save()
         # Scale about the feet so the character remains grounded while its
         # silhouette is less squat on the desktop.
-        painter.translate(center_x, baseline_y)
-        painter.scale(0.86, 1.15)
+        breathing = math.sin(self._idle_phase)
+        vertical_offset = 1.5 * breathing if self._state is PetState.IDLE else 0.0
+        painter.translate(center_x, baseline_y + vertical_offset)
+        painter.scale(0.86 * (1.0 + 0.006 * breathing), 1.15 * (1.0 - 0.008 * breathing))
         painter.translate(-center_x, -baseline_y)
         self._svg_renderer.render(painter, self.CHARACTER_RECT)
         painter.restore()
