@@ -58,6 +58,10 @@ def main() -> int:
         if window is not None:
             window.show_reminder(message)
 
+    def task_completed(task_label: str) -> None:
+        if window is not None:
+            window.complete_task(task_label)
+
     dashboard = Dashboard(
         task_manager,
         focus_timer,
@@ -67,6 +71,7 @@ def main() -> int:
         on_focus_started=focus_started,
         on_focus_finished=focus_finished,
         on_reminder_due=reminder_due,
+        on_task_completed=task_completed,
     )
     def open_dashboard(section: str) -> None:
         if section == "home":

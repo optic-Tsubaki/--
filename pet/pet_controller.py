@@ -13,6 +13,8 @@ class PetState(StrEnum):
     HAPPY = "happy"
     SLEEP = "sleep"
     FOCUS = "focus"
+    GREETING = "greeting"
+    CELEBRATE = "celebrate"
 
 
 class PetController:

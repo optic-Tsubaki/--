@@ -62,6 +62,7 @@ class Dashboard(QDialog):
         on_focus_started: Callable[[str], None] | None = None,
         on_focus_finished: Callable[[int], None] | None = None,
         on_reminder_due: Callable[[str], None] | None = None,
+        on_task_completed: Callable[[str], None] | None = None,
     ) -> None:
         super().__init__()
         self._tasks = tasks
@@ -70,6 +71,7 @@ class Dashboard(QDialog):
         self._on_focus_started = on_focus_started
         self._on_focus_finished = on_focus_finished
         self._on_reminder_due = on_reminder_due
+        self._on_task_completed = on_task_completed
         self._active_reminder_dialogs: dict[int, ReminderDialog] = {}
         self.setWindowTitle("StudyPet 控制面板")
         self.setMinimumSize(680, 520)
@@ -420,6 +422,11 @@ class Dashboard(QDialog):
         if task_id is None:
             return
         self._tasks.set_completed(int(task_id), item.checkState() == Qt.CheckState.Checked)
+        if (
+            item.checkState() == Qt.CheckState.Checked
+            and self._on_task_completed is not None
+        ):
+            self._on_task_completed(item.text())
         self._refresh_timer_tasks()
 
     def _toggle_timer(self) -> None:

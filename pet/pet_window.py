@@ -43,6 +43,7 @@ class PetWindow(QWidget):
         self._animation_timer = QTimer(self)
         self._animation_timer.timeout.connect(self._advance_animation)
         self._idle_phase = 0.0
+        self._reaction_token = 0
         self._life_timer = QTimer(self)
         self._life_timer.setInterval(50)
         self._life_timer.timeout.connect(self._advance_idle_motion)
@@ -91,21 +92,59 @@ class PetWindow(QWidget):
         self.speak(f"开始专注：{task_label}", duration_ms=3600)
 
     def show_reminder(self, message: str) -> None:
-        self._controller.set_state(PetState.HAPPY)
+        self._show_temporary_state(PetState.HAPPY, 5_200)
         self.speak(f"提醒你：{message}")
-        QTimer.singleShot(5_200, lambda: self._controller.set_state(PetState.IDLE))
 
     def finish_focus_session(self, duration_seconds: int) -> None:
         """Celebrate a saved focus session and return to the idle companion."""
         minutes = max(1, duration_seconds // 60)
-        self._controller.set_state(PetState.HAPPY)
+        self._show_temporary_state(PetState.CELEBRATE, 2_600, return_state=PetState.IDLE)
         self.speak(f"完成啦！这次专注了 {minutes} 分钟。", duration_ms=4200)
-        QTimer.singleShot(2400, lambda: self._controller.set_state(PetState.IDLE))
+
+    def complete_task(self, task_label: str) -> None:
+        """Celebrate a checked-off task without interrupting an active focus state."""
+        self._show_temporary_state(PetState.CELEBRATE, 2_400)
+        self.speak(f"完成「{task_label}」！做得漂亮。", duration_ms=3_200)
+
+    def greet(self) -> None:
+        """Give a short visual acknowledgement before opening the control panel."""
+        self._show_temporary_state(PetState.GREETING, 1_600)
+        self.speak("我在，今天也一起稳稳推进。", duration_ms=2_600)
 
     def _set_state(self, state: PetState) -> None:
+        """Apply a persistent state and cancel any earlier temporary reaction."""
+        self._reaction_token += 1
+        self._apply_state(state)
+
+    def _apply_state(self, state: PetState) -> None:
         self._state = state
-        self._load_character_frames(state)
+        # Greeting and celebration only transform the already visible vector
+        # character.  Reloading an SVG renderer for a simple click reaction is
+        # unnecessary and can be fragile in a frozen Qt application.
+        if state not in {PetState.GREETING, PetState.CELEBRATE}:
+            self._load_character_frames(state)
+        elif self._svg_renderer is None and not self._frames:
+            self._load_character_frames(PetState.IDLE)
         self.update()
+
+    def _show_temporary_state(
+        self,
+        state: PetState,
+        duration_ms: int,
+        *,
+        return_state: PetState | None = None,
+    ) -> None:
+        """Play an expressive action, then restore the previous working state."""
+        restore_state = return_state or self._state
+        self._reaction_token += 1
+        token = self._reaction_token
+        self._apply_state(state)
+
+        def restore() -> None:
+            if token == self._reaction_token:
+                self._apply_state(restore_state)
+
+        QTimer.singleShot(duration_ms, restore)
 
     def _load_character_frames(self, state: PetState) -> None:
         """Load a vector idle image or ordered PNG frames for a state."""
@@ -113,7 +152,15 @@ class PetWindow(QWidget):
         project_root = images_dir.parent.parent
         vector_idle = project_root / "图片" / "霓虹狐耳 chibi 少女贴纸.svg"
 
+        current_renderer = self._svg_renderer
+
         def load_vector_idle() -> bool:
+            if current_renderer is not None and current_renderer.isValid():
+                self._frames = []
+                self._frame_index = 0
+                self._svg_renderer = current_renderer
+                self._animation_timer.stop()
+                return True
             if not vector_idle.exists():
                 return False
             renderer = QSvgRenderer(str(vector_idle), self)
@@ -164,8 +211,8 @@ class PetWindow(QWidget):
         self.update()
 
     def _advance_idle_motion(self) -> None:
-        """Keep the vector companion gently alive without a separate sprite sheet."""
-        if self._state is PetState.IDLE and self._svg_renderer is not None:
+        """Drive small state-specific vector motions without a sprite sheet."""
+        if self._svg_renderer is not None:
             self._idle_phase = (self._idle_phase + 0.11) % math.tau
             self.update()
 
@@ -195,14 +242,18 @@ class PetWindow(QWidget):
             self._drag_offset = None
             self.setCursor(Qt.CursorShape.OpenHandCursor)
             if not self._dragged:
-                self._show_quick_menu(event.globalPosition().toPoint())
+                try:
+                    self.greet()
+                except Exception:
+                    # A cosmetic response must never be able to close the pet.
+                    self._set_state(PetState.IDLE)
             event.accept()
             return
         super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
-            self._open_dashboard("tasks")
+            self._open_dashboard("home")
             event.accept()
             return
         super().mouseDoubleClickEvent(event)
@@ -286,20 +337,85 @@ class PetWindow(QWidget):
         painter.drawPixmap(x, y, scaled)
 
     def _draw_vector_character(self, painter: QPainter) -> None:
-        """Render the vector pet with a slightly taller, slimmer desk-pet pose."""
+        """Render the vector pet with small, readable state-specific actions."""
         assert self._svg_renderer is not None
         center_x = self.CHARACTER_RECT.center().x()
         baseline_y = self.CHARACTER_RECT.bottom()
+        phase = self._idle_phase
+        breathing = math.sin(phase)
+        scale_x, scale_y = 0.86, 1.15
+        vertical_offset = 0.0
+        rotation = 0.0
+
+        if self._state is PetState.IDLE:
+            vertical_offset = 1.5 * breathing
+            scale_x *= 1.0 + 0.006 * breathing
+            scale_y *= 1.0 - 0.008 * breathing
+        elif self._state is PetState.FOCUS:
+            # A steadier, slightly forward pose communicates that the pet is working.
+            vertical_offset = 0.7 * math.sin(phase * 0.65)
+            scale_x *= 0.985
+            scale_y *= 1.025
+        elif self._state is PetState.HAPPY:
+            # A reminder should be noticeable without competing with the artwork.
+            vertical_offset = -3.0 * abs(math.sin(phase * 1.3))
+            scale_x *= 1.0 + 0.006 * abs(math.sin(phase * 1.3))
+        elif self._state is PetState.GREETING:
+            # A small nod reads more naturally for this compact chibi illustration.
+            vertical_offset = -1.5 * abs(math.sin(phase * 1.45))
+            rotation = 1.2 * math.sin(phase * 1.45)
+        elif self._state is PetState.CELEBRATE:
+            # A single light hop is enough to mark a genuine achievement.
+            vertical_offset = -6.0 * abs(math.sin(phase * 1.45))
+            scale_x *= 1.0 + 0.012 * abs(math.sin(phase * 1.45))
+            scale_y *= 1.0 - 0.009 * abs(math.sin(phase * 1.45))
+        elif self._state is PetState.SLEEP:
+            vertical_offset = 2.0 + 1.2 * math.sin(phase * 0.55)
+            scale_x *= 0.97
+            scale_y *= 0.985
+
         painter.save()
-        # Scale about the feet so the character remains grounded while its
-        # silhouette is less squat on the desktop.
-        breathing = math.sin(self._idle_phase)
-        vertical_offset = 1.5 * breathing if self._state is PetState.IDLE else 0.0
         painter.translate(center_x, baseline_y + vertical_offset)
-        painter.scale(0.86 * (1.0 + 0.006 * breathing), 1.15 * (1.0 - 0.008 * breathing))
+        painter.rotate(rotation)
+        painter.scale(scale_x, scale_y)
         painter.translate(-center_x, -baseline_y)
         self._svg_renderer.render(painter, self.CHARACTER_RECT)
+        if self._state in {PetState.HAPPY, PetState.CELEBRATE}:
+            self._draw_celebrating_sleeves(painter, phase)
         painter.restore()
+
+    def _draw_celebrating_sleeves(self, painter: QPainter, phase: float) -> None:
+        """Animate the original sleeves as separate vector cut-outs for celebration.
+
+        The supplied SVG is a flattened trace, so it has no editable arm layers.
+        These two carefully placed crop regions reuse the exact original artwork
+        while pivoting around each shoulder; no generated or redrawn character
+        art is introduced.
+        """
+        assert self._svg_renderer is not None
+        left_sleeve = QRectF(48, 166, 72, 94)
+        right_sleeve = QRectF(180, 166, 72, 94)
+        motion = 3.0 * math.sin(phase * 1.45)
+        strength = 42.0 if self._state is PetState.CELEBRATE else 20.0
+
+        for sleeve, pivot, angle in (
+            (left_sleeve, QPoint(109, 181), -strength + motion),
+            (right_sleeve, QPoint(191, 181), strength - motion),
+        ):
+            # Remove the resting sleeve before redrawing the same original
+            # pixels at its raised pose.  The clear area stays transparent.
+            painter.save()
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
+            painter.fillRect(sleeve.adjusted(-2, -2, 2, 2), Qt.GlobalColor.transparent)
+            painter.restore()
+
+            painter.save()
+            painter.translate(pivot)
+            painter.rotate(angle)
+            painter.translate(-pivot)
+            painter.setClipRect(sleeve)
+            self._svg_renderer.render(painter, self.CHARACTER_RECT)
+            painter.restore()
 
     def _paint_fallback_cat(self, painter: QPainter) -> None:
         """A visible starter mascot while the project awaits character PNGs."""
