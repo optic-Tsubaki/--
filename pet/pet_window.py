@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import math
+import random
 from pathlib import Path
 from typing import Callable
 
 from PyQt6.QtCore import QPoint, QRectF, Qt, QTimer
 from PyQt6.QtGui import QAction, QColor, QGuiApplication, QMouseEvent, QPainter, QPainterPath, QPen, QPixmap, QPolygon
 from PyQt6.QtSvg import QSvgRenderer
-from PyQt6.QtWidgets import QLabel, QMenu, QWidget
+from PyQt6.QtWidgets import QGraphicsDropShadowEffect, QLabel, QMenu, QWidget
 
 from pet.pet_controller import PetController, PetState
 
@@ -21,6 +22,15 @@ class PetWindow(QWidget):
     # A square canvas suits full-body character illustrations and prevents
     # portrait assets from being squeezed into the former shallow rectangle.
     CHARACTER_RECT = QRectF(32, 62, 236, 236)
+    GREETINGS = (
+        "你回来啦，我一直在这儿陪你。",
+        "不用一个人硬撑，慢慢来也很好。",
+        "辛苦啦，先深呼吸一下，我们再继续。",
+        "做一点也算前进，我陪你记住这一步。",
+        "卡住也没关系，先从最小的一步开始吧。",
+        "你已经很努力了，休息一下也可以。",
+        "今天的你也很棒，我们轻轻往前走。",
+    )
 
     def __init__(self, on_open_dashboard: Callable[[str], None] | None = None) -> None:
         super().__init__()
@@ -41,8 +51,8 @@ class PetWindow(QWidget):
         self._svg_renderer: QSvgRenderer | None = None
         self._frame_index = 0
         self._animation_timer = QTimer(self)
-        # Each state is a short action that settles into a pose.  Repeating a
-        # two-frame sprite indefinitely reads as distracting flicker.
+        # A one-shot timer gives each pose a deliberate hold time instead of
+        # switching two sprite frames rapidly like a visual flicker.
         self._animation_timer.setSingleShot(True)
         self._animation_timer.timeout.connect(self._advance_animation)
         self._idle_phase = 0.0
@@ -56,13 +66,26 @@ class PetWindow(QWidget):
 
         self._bubble = QLabel(self)
         self._bubble.setWordWrap(True)
-        self._bubble.setFixedWidth(214)
+        self._bubble.setFixedWidth(226)
         self._bubble.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._bubble.setStyleSheet(
-            "QLabel { background: rgba(255, 255, 255, 242); color: #39465e; "
-            "border: 2px solid #f2b6ca; border-radius: 16px; padding: 9px 12px; "
-            "font-size: 13px; font-family: 'Microsoft YaHei UI'; }"
+            "QLabel {"
+            " background: rgba(22, 58, 56, 238);"
+            " color: #f8fffb;"
+            " border: 1px solid #94dfc1;"
+            " border-radius: 17px;"
+            " padding: 10px 14px;"
+            " font-size: 13px;"
+            " font-weight: 600;"
+            " font-family: 'Microsoft YaHei UI';"
+            " line-height: 1.45;"
+            "}"
         )
+        bubble_shadow = QGraphicsDropShadowEffect(self._bubble)
+        bubble_shadow.setBlurRadius(18)
+        bubble_shadow.setOffset(0, 5)
+        bubble_shadow.setColor(QColor(7, 25, 24, 150))
+        self._bubble.setGraphicsEffect(bubble_shadow)
         self._bubble.move(42, 8)
         self._bubble.hide()
 
@@ -112,7 +135,7 @@ class PetWindow(QWidget):
     def greet(self) -> None:
         """Give a short visual acknowledgement before opening the control panel."""
         self._show_temporary_state(PetState.GREETING, 1_600)
-        self.speak("我在，今天也一起稳稳推进。", duration_ms=2_600)
+        self.speak(random.choice(self.GREETINGS), duration_ms=2_600)
 
     def _set_state(self, state: PetState) -> None:
         """Apply a persistent state and cancel any earlier temporary reaction."""
@@ -192,6 +215,12 @@ class PetWindow(QWidget):
         for frame_paths in candidates:
             loaded_frames = [QPixmap(str(path)) for path in frame_paths]
             loaded_frames = [frame for frame in loaded_frames if not frame.isNull()]
+            if state in {PetState.IDLE, PetState.FOCUS, PetState.HAPPY, PetState.SLEEP}:
+                # The generated alternate poses use slightly different scene
+                # framing.  At desktop-pet scale that reads as a horizontal
+                # jump, so keep one carefully aligned key pose per state and
+                # animate it procedurally during painting instead.
+                loaded_frames = loaded_frames[:1]
             if loaded_frames:
                 self._frames = loaded_frames
                 break
@@ -199,11 +228,9 @@ class PetWindow(QWidget):
             return
         self._frame_index = 0
         if len(self._frames) > 1:
-            # Play the transition once, then keep the finished pose visible.
-            # This keeps the desktop companion calm instead of flashing.
-            self._animation_timer.start(
-                700 if state in {PetState.IDLE, PetState.SLEEP} else 520
-            )
+            # Let the companion rest on its main pose before beginning the
+            # next tiny action.  A calm loop feels animated without flashing.
+            self._animation_timer.start(self._rest_pose_duration(state))
         else:
             self._animation_timer.stop()
 
@@ -211,13 +238,34 @@ class PetWindow(QWidget):
         if not self._frames:
             self._animation_timer.stop()
             return
-        self._frame_index = min(self._frame_index + 1, len(self._frames) - 1)
-        self._animation_timer.stop()
+        self._frame_index = (self._frame_index + 1) % len(self._frames)
+        if self._frame_index == 0:
+            self._animation_timer.start(self._rest_pose_duration(self._state))
+        else:
+            self._animation_timer.start(self._action_pose_duration(self._state))
         self.update()
+
+    @staticmethod
+    def _rest_pose_duration(state: PetState) -> int:
+        """Duration of the calm pose before the next small action."""
+        if state in {PetState.IDLE, PetState.SLEEP, PetState.GREETING}:
+            return 4_200
+        if state in {PetState.HAPPY, PetState.CELEBRATE}:
+            return 2_200
+        return 3_200
+
+    @staticmethod
+    def _action_pose_duration(state: PetState) -> int:
+        """Duration of the active pose so its intent remains readable."""
+        if state in {PetState.IDLE, PetState.SLEEP, PetState.GREETING}:
+            return 1_650
+        if state in {PetState.HAPPY, PetState.CELEBRATE}:
+            return 1_050
+        return 1_850
 
     def _advance_idle_motion(self) -> None:
         """Drive small state-specific vector motions without a sprite sheet."""
-        if self._svg_renderer is not None:
+        if self._svg_renderer is not None or self._frames:
             self._idle_phase = (self._idle_phase + 0.11) % math.tau
             self.update()
 
@@ -265,6 +313,32 @@ class PetWindow(QWidget):
 
     def _show_context_menu(self, event: QMouseEvent) -> None:
         menu = QMenu(self)
+        menu.setStyleSheet(
+            "QMenu { background: #163a38; color: #f8fffb; border: 1px solid #94dfc1; "
+            "border-radius: 12px; padding: 7px; font-family: 'Microsoft YaHei UI'; } "
+            "QMenu::item { padding: 8px 34px 8px 13px; border-radius: 7px; } "
+            "QMenu::item:selected { background: #2a655e; } "
+            "QMenu::separator { height: 1px; background: #3b746c; margin: 6px 8px; }"
+        )
+        home_action = menu.addAction("打开功能首页")
+        home_action.triggered.connect(lambda: self._open_dashboard("home"))
+        menu.addSeparator()
+
+        for label, section in (
+            ("今日任务", "tasks"),
+            ("专注计时", "timer"),
+            ("提醒", "reminders"),
+            ("学习统计", "stats"),
+            ("AI 聊天", "chat"),
+            ("设置", "settings"),
+        ):
+            action = menu.addAction(label)
+            action.triggered.connect(
+                lambda checked=False, target=section: self._open_dashboard(target)
+            )
+
+        menu.addSeparator()
+        state_menu = menu.addMenu("切换状态")
         for state, label in (
             (PetState.IDLE, "待机"),
             (PetState.FOCUS, "专注"),
@@ -273,43 +347,13 @@ class PetWindow(QWidget):
         ):
             action = QAction(label, self)
             action.triggered.connect(lambda checked=False, value=state: self._controller.set_state(value))
-            menu.addAction(action)
+            state_menu.addAction(action)
         menu.addSeparator()
         hide_action = menu.addAction("隐藏")
         hide_action.triggered.connect(self.hide)
         exit_action = menu.addAction("退出 StudyPet")
         exit_action.triggered.connect(self.close)
         menu.exec(event.globalPosition().toPoint())
-
-    def _show_quick_menu(self, position: QPoint) -> None:
-        """Show the V0.1 shortcuts promised by the desktop-pet interaction."""
-        menu = QMenu(self)
-        menu.setStyleSheet(
-            "QMenu { background: #fefcff; border: 1px solid #b8d9ca; border-radius: 10px; "
-            "padding: 6px; font-family: 'Microsoft YaHei UI'; } "
-            "QMenu::item { padding: 8px 28px 8px 12px; border-radius: 6px; } "
-            "QMenu::item:selected { background: #dff6e9; }"
-        )
-        greeting = menu.addAction("今天也一起努力吧！")
-        greeting.setEnabled(False)
-        menu.addSeparator()
-
-        chat_action = menu.addAction("聊天")
-        chat_action.triggered.connect(lambda: self._open_dashboard("chat"))
-        if self._on_open_dashboard is not None:
-            self._on_open_dashboard("home")
-        return
-
-        for label, section in (
-            ("今日任务", "tasks"),
-            ("开始计时", "timer"),
-            ("学习统计", "stats"),
-        ):
-            action = menu.addAction(label)
-            action.triggered.connect(lambda checked=False, value=section: self._open_dashboard(value))
-        settings_action = menu.addAction("设置")
-        settings_action.triggered.connect(lambda: self._open_dashboard("settings"))
-        menu.exec(position)
 
     def _open_dashboard(self, section: str) -> None:
         if self._on_open_dashboard is None:
@@ -339,6 +383,17 @@ class PetWindow(QWidget):
         )
         x = target.x() + (target.width() - scaled.width()) // 2
         y = target.bottom() - scaled.height() + 1
+        phase = self._idle_phase
+        if self._state in {PetState.IDLE, PetState.GREETING}:
+            y += round(0.8 * math.sin(phase * 0.7))
+        elif self._state is PetState.FOCUS:
+            y += round(0.55 * math.sin(phase * 0.5))
+        elif self._state in {PetState.HAPPY, PetState.CELEBRATE}:
+            y -= round(2.0 * abs(math.sin(phase * 0.9)))
+        elif self._state is PetState.SLEEP:
+            # One physical display pixel of slow vertical movement reads as a
+            # calm breathing motion while keeping the desk perfectly anchored.
+            y += round(math.sin(phase * 0.55))
         painter.drawPixmap(x, y, scaled)
 
     def _draw_vector_character(self, painter: QPainter) -> None:

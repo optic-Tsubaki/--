@@ -8,9 +8,13 @@ $releaseDir = Join-Path $projectRoot 'release'
 $workDir = Join-Path $projectRoot 'build\pyinstaller'
 $imageDirName = ([char]0x56FE) + ([char]0x7247)
 $imageDir = Join-Path $projectRoot $imageDirName
+$iconPath = Join-Path $projectRoot 'resources\icon\studypet.ico'
 
 if (-not (Test-Path -LiteralPath $entryPoint)) {
     throw "Entry point not found: $entryPoint"
+}
+if (-not (Test-Path -LiteralPath $iconPath)) {
+    throw "Application icon not found: $iconPath"
 }
 
 $arguments = @(
@@ -19,6 +23,7 @@ $arguments = @(
     '--clean',
     '--windowed',
     '--name', 'StudyPet',
+    '--icon', $iconPath,
     '--distpath', $releaseDir,
     '--workpath', $workDir,
     '--specpath', $workDir,

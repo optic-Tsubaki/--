@@ -6,7 +6,8 @@ import sys
 from pathlib import Path
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QApplication, QMenu, QStyle, QSystemTrayIcon
+from PyQt6.QtGui import QIcon
+from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from ai.provider_manager import ProviderManager
 from config.settings_service import SettingsService
@@ -32,6 +33,9 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("StudyPet AI")
     app.setOrganizationName("StudyPet")
+    icon_path = Path(__file__).resolve().parent / "resources" / "icon" / "studypet.ico"
+    if icon_path.exists():
+        app.setWindowIcon(QIcon(str(icon_path)))
 
     paths = AppPaths.for_project(application_root())
     paths.ensure_exists()
@@ -82,10 +86,7 @@ def main() -> int:
     window = PetWindow(on_open_dashboard=open_dashboard)
     window.show()
 
-    tray = QSystemTrayIcon(
-        app.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon),
-        app,
-    )
+    tray = QSystemTrayIcon(app.windowIcon(), app)
     tray.setToolTip("StudyPet AI · 学习桌宠")
     tray_menu = QMenu()
     open_dashboard_action = tray_menu.addAction("打开控制面板")

@@ -178,6 +178,13 @@ class Dashboard(QDialog):
         return header
 
     def open_section(self, section: str = "tasks") -> None:
+        if section == "reminders":
+            self._refresh_all()
+            self._tabs.setCurrentWidget(self._reminders_page)
+            self.show()
+            self.raise_()
+            self.activateWindow()
+            return
         index = {"tasks": 0, "timer": 1, "stats": 2, "chat": 3, "settings": 4}.get(section, 0)
         self._refresh_all()
         self._tabs.setCurrentIndex(index)
