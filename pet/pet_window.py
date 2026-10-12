@@ -6,6 +6,7 @@ from pathlib import Path
 
 from PyQt6.QtCore import QPoint, QRectF, Qt, QTimer
 from PyQt6.QtGui import QAction, QColor, QGuiApplication, QMouseEvent, QPainter, QPainterPath, QPen, QPixmap, QPolygon
+from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import QLabel, QMenu, QWidget
 
 from pet.pet_controller import PetController, PetState
@@ -34,6 +35,7 @@ class PetWindow(QWidget):
         self._dragged = False
         self._state = PetState.IDLE
         self._frames: list[QPixmap] = []
+        self._svg_renderer: QSvgRenderer | None = None
         self._frame_index = 0
         self._animation_timer = QTimer(self)
         self._animation_timer.timeout.connect(self._advance_animation)
@@ -81,17 +83,25 @@ class PetWindow(QWidget):
         self.update()
 
     def _load_character_frames(self, state: PetState) -> None:
-        """Load ordered PNG frames for a state and start their animation loop."""
+        """Load a vector idle image or ordered PNG frames for a state."""
         images_dir = Path(__file__).parent.parent / "resources" / "images"
         project_root = images_dir.parent.parent
         vector_idle = project_root / "图片" / "霓虹狐耳 chibi 少女贴纸.svg"
 
-        # Use the supplied vector character for the main idle state. PNG frames
-        # remain available for animation states and as a portable fallback.
-        candidates: list[list[Path]] = []
+        self._svg_renderer = None
+        # Render the supplied SVG directly on the widget. This preserves its
+        # vector edges instead of first rasterizing it into a small QPixmap.
         if state is PetState.IDLE and vector_idle.exists():
-            candidates.append([vector_idle])
+            renderer = QSvgRenderer(str(vector_idle), self)
+            if renderer.isValid():
+                self._frames = []
+                self._frame_index = 0
+                self._svg_renderer = renderer
+                self._animation_timer.stop()
+                return
 
+        # PNG frames remain available for animation states and as a fallback.
+        candidates: list[list[Path]] = []
         png_frames = sorted(images_dir.glob(f"{state}_*.png"))
         if png_frames:
             candidates.append(png_frames)
@@ -181,7 +191,9 @@ class PetWindow(QWidget):
     def paintEvent(self, event) -> None:  # type: ignore[override]
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        if self._frames:
+        if self._svg_renderer is not None:
+            self._draw_vector_character(painter)
+        elif self._frames:
             self._draw_character_frame(painter, self._frames[self._frame_index])
         else:
             self._paint_fallback_cat(painter)
@@ -199,6 +211,20 @@ class PetWindow(QWidget):
         x = target.x() + (target.width() - scaled.width()) // 2
         y = target.bottom() - scaled.height() + 1
         painter.drawPixmap(x, y, scaled)
+
+    def _draw_vector_character(self, painter: QPainter) -> None:
+        """Render the vector pet with a slightly taller, slimmer desk-pet pose."""
+        assert self._svg_renderer is not None
+        center_x = self.CHARACTER_RECT.center().x()
+        baseline_y = self.CHARACTER_RECT.bottom()
+        painter.save()
+        # Scale about the feet so the character remains grounded while its
+        # silhouette is less squat on the desktop.
+        painter.translate(center_x, baseline_y)
+        painter.scale(0.86, 1.15)
+        painter.translate(-center_x, -baseline_y)
+        self._svg_renderer.render(painter, self.CHARACTER_RECT)
+        painter.restore()
 
     def _paint_fallback_cat(self, painter: QPainter) -> None:
         """A visible starter mascot while the project awaits character PNGs."""
