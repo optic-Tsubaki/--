@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import csv
+from datetime import datetime
 from typing import Callable
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QDateTime, Qt, QTimer
+from PyQt6.QtGui import QCloseEvent
 from PyQt6.QtWidgets import (
     QComboBox,
+    QDateTimeEdit,
     QDialog,
     QFileDialog,
     QFormLayout,
@@ -24,6 +27,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.task_manager import TaskManager
+from core.reminder_manager import ReminderManager
 from core.timer import FocusTimer
 from config.settings_service import SettingsService
 from security.credential_store import CredentialStore
@@ -32,22 +36,31 @@ from ui.settings_panel import SettingsPanel
 
 
 class Dashboard(QDialog):
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """关闭窗口时仅收起面板，桌宠继续运行。"""
+        event.ignore()
+        self.hide()
+
     """Small, usable V0.2 panel for tasks and local focus sessions."""
 
     def __init__(
         self,
         tasks: TaskManager,
         focus_timer: FocusTimer,
+        reminders: ReminderManager,
         settings_service: SettingsService,
         credentials: CredentialStore,
         on_focus_started: Callable[[str], None] | None = None,
         on_focus_finished: Callable[[int], None] | None = None,
+        on_reminder_due: Callable[[str], None] | None = None,
     ) -> None:
         super().__init__()
         self._tasks = tasks
+        self._reminders = reminders
         self._focus_timer = focus_timer
         self._on_focus_started = on_focus_started
         self._on_focus_finished = on_focus_finished
+        self._on_reminder_due = on_reminder_due
         self.setWindowTitle("StudyPet 控制面板")
         self.setMinimumSize(680, 520)
         self._apply_style()
@@ -76,6 +89,12 @@ class Dashboard(QDialog):
         self._ticker.setInterval(500)
         self._ticker.timeout.connect(self._refresh_timer_display)
         self._ticker.start()
+
+        self._reminder_ticker = QTimer(self)
+        self._reminder_ticker.setInterval(15_000)
+        self._reminder_ticker.timeout.connect(self._check_due_reminders)
+        self._reminder_ticker.start()
+        self._build_reminders_tab()
         self._refresh_all()
 
     def _apply_style(self) -> None:
@@ -181,6 +200,44 @@ class Dashboard(QDialog):
         layout.addWidget(QLabel("结束计时后，时长会自动保存到本机。"))
         self._tabs.addTab(page, "专注计时")
 
+    def _build_reminders_tab(self) -> None:
+        if hasattr(self, "_reminder_table"):
+            return
+
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(24, 22, 24, 24)
+        layout.setSpacing(14)
+
+        title = QLabel("提醒")
+        title.setObjectName("pageTitle")
+        subtitle = QLabel("到点后，桌宠会在桌面上轻声提醒你。提醒仅保存在这台电脑。")
+        subtitle.setObjectName("pageSubtitle")
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
+
+        editor = QHBoxLayout()
+        self._reminder_message = QLineEdit()
+        self._reminder_message.setPlaceholderText("例如：起来活动一下")
+        self._reminder_time = QDateTimeEdit(QDateTime.currentDateTime().addSecs(15 * 60))
+        self._reminder_time.setCalendarPopup(True)
+        self._reminder_time.setDisplayFormat("yyyy-MM-dd HH:mm")
+        add_button = QPushButton("创建提醒")
+        add_button.clicked.connect(self._add_reminder)
+        editor.addWidget(self._reminder_message, 1)
+        editor.addWidget(self._reminder_time)
+        editor.addWidget(add_button)
+        layout.addLayout(editor)
+
+        self._reminder_table = QTableWidget(0, 2)
+        self._reminder_table.setHorizontalHeaderLabels(["提醒内容", "时间"])
+        self._reminder_table.horizontalHeader().setStretchLastSection(True)
+        self._reminder_table.verticalHeader().setVisible(False)
+        self._reminder_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._reminder_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        layout.addWidget(self._reminder_table, 1)
+        self._tabs.addTab(page, "提醒")
+
     def _build_stats_tab(self) -> None:
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -249,6 +306,7 @@ class Dashboard(QDialog):
         self._refresh_task_table()
         self._refresh_timer_tasks()
         self._refresh_timer_display()
+        self._refresh_reminders()
         self._refresh_session_table()
 
     def _refresh_task_table(self) -> None:
@@ -292,6 +350,39 @@ class Dashboard(QDialog):
         total_hours, total_remainder = divmod(total, 3600)
         total_minutes = total_remainder // 60
         self._today_label.setText(f"{total_hours} 小时 {total_minutes:02} 分钟")
+
+    def _add_reminder(self) -> None:
+        message = self._reminder_message.text()
+        if not message.strip():
+            QMessageBox.warning(self, "提醒内容为空", "请先写下要提醒自己的内容。")
+            return
+
+        reminder_time = self._reminder_time.dateTime().toPyDateTime()
+        if reminder_time <= datetime.now():
+            QMessageBox.warning(self, "时间不合适", "请选择未来的提醒时间。")
+            return
+
+        self._reminders.add(message, reminder_time)
+        self._reminder_message.clear()
+        self._refresh_reminders()
+
+    def _refresh_reminders(self) -> None:
+        reminders = self._reminders.list_upcoming()
+        self._reminder_table.setRowCount(len(reminders))
+        for row, reminder in enumerate(reminders):
+            self._reminder_table.setItem(row, 0, QTableWidgetItem(reminder.message))
+            display_time = datetime.fromisoformat(reminder.remind_at).strftime("%m-%d %H:%M")
+            self._reminder_table.setItem(row, 1, QTableWidgetItem(display_time))
+
+    def _check_due_reminders(self) -> None:
+        due_reminders = self._reminders.claim_due()
+        if not due_reminders:
+            return
+
+        for reminder in due_reminders:
+            if self._on_reminder_due is not None:
+                self._on_reminder_due(reminder.message)
+        self._refresh_reminders()
 
     def _refresh_session_table(self) -> None:
         sessions = self._focus_timer.list_recent_sessions()

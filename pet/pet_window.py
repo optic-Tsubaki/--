@@ -90,6 +90,11 @@ class PetWindow(QWidget):
         self._controller.set_state(PetState.FOCUS)
         self.speak(f"开始专注：{task_label}", duration_ms=3600)
 
+    def show_reminder(self, message: str) -> None:
+        self._controller.set_state(PetState.HAPPY)
+        self.speak(f"提醒你：{message}", duration=7_000)
+        QTimer.singleShot(5_200, lambda: self._controller.set_state(PetState.IDLE))
+
     def finish_focus_session(self, duration_seconds: int) -> None:
         """Celebrate a saved focus session and return to the idle companion."""
         minutes = max(1, duration_seconds // 60)
@@ -235,7 +240,11 @@ class PetWindow(QWidget):
 
         chat_action = menu.addAction("聊天")
         chat_action.triggered.connect(lambda: self._open_dashboard("chat"))
-        for label, section in (("今日任务", "tasks"), ("开始计时", "timer"), ("学习统计", "stats")):
+        for label, section in (
+            ("今日任务", "tasks"),
+            ("开始计时", "timer"),
+            ("学习统计", "stats"),
+        ):
             action = menu.addAction(label)
             action.triggered.connect(lambda checked=False, value=section: self._open_dashboard(value))
         settings_action = menu.addAction("设置")

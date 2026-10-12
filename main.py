@@ -10,6 +10,7 @@ from ai.provider_manager import ProviderManager
 from config.settings_service import SettingsService
 from core.app_paths import AppPaths
 from core.task_manager import TaskManager
+from core.reminder_manager import ReminderManager
 from core.timer import FocusTimer
 from database.sqlite import StudyPetDatabase
 from pet.pet_window import PetWindow
@@ -42,13 +43,19 @@ def main() -> int:
         if window is not None:
             window.finish_focus_session(duration_seconds)
 
+    def reminder_due(message: str) -> None:
+        if window is not None:
+            window.show_reminder(message)
+
     dashboard = Dashboard(
         task_manager,
         focus_timer,
+        ReminderManager(paths.database_file),
         settings_service,
         CredentialStore(),
         on_focus_started=focus_started,
         on_focus_finished=focus_finished,
+        on_reminder_due=reminder_due,
     )
     window = PetWindow(on_open_dashboard=dashboard.open_section)
     window.show()
