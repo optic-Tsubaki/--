@@ -8,6 +8,7 @@ venv/
 settings.json
 ai_config.json
 *.log
+data/
 .env
 .env.*
 dist/

@@ -80,6 +80,10 @@ class ReminderManager:
                 (reminder_id,),
             )
 
+    def delete(self, reminder_id: int) -> None:
+        with sqlite3.connect(self._database_file) as connection:
+            connection.execute("DELETE FROM reminders WHERE id = ?", (reminder_id,))
+
     def snooze(self, reminder_id: int, minutes: int = 10) -> None:
         later = datetime.now() + timedelta(minutes=minutes)
         with sqlite3.connect(self._database_file) as connection:

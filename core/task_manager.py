@@ -42,6 +42,10 @@ class TaskManager:
             ).fetchall()
         return [Task(row[0], row[1], row[2], bool(row[3]), row[4]) for row in rows]
 
+    def delete(self, task_id: int) -> None:
+        with sqlite3.connect(self._database_file) as connection:
+            connection.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+
     def set_completed(self, task_id: int, completed: bool) -> None:
         with sqlite3.connect(self._database_file) as connection:
             connection.execute(

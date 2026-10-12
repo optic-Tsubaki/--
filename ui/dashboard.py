@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Callable
 
 from PyQt6.QtCore import QDateTime, Qt, QTimer
-from PyQt6.QtGui import QCloseEvent
+from PyQt6.QtGui import QAction, QCloseEvent, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QComboBox,
     QDateTimeEdit,
@@ -97,6 +97,14 @@ class Dashboard(QDialog):
         self._reminder_ticker.timeout.connect(self._check_due_reminders)
         self._reminder_ticker.start()
         self._build_reminders_tab()
+        self._task_table.setToolTip("选中任务后可按 Delete 删除")
+        self._delete_task_action = QAction("删除所选任务", self._task_table)
+        self._delete_task_action.triggered.connect(self._delete_selected_task)
+        self._task_table.addAction(self._delete_task_action)
+        self._task_table.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
+        self._task_delete_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Delete), self._task_table)
+        self._task_delete_shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
+        self._task_delete_shortcut.activated.connect(self._delete_selected_task)
         self._refresh_all()
 
     def _apply_style(self) -> None:
@@ -226,9 +234,13 @@ class Dashboard(QDialog):
         self._reminder_time.setDisplayFormat("yyyy-MM-dd HH:mm")
         add_button = QPushButton("创建提醒")
         add_button.clicked.connect(self._add_reminder)
+        delete_button = QPushButton("删除所选")
+        delete_button.setObjectName("secondaryButton")
+        delete_button.clicked.connect(self._delete_selected_reminder)
         editor.addWidget(self._reminder_message, 1)
         editor.addWidget(self._reminder_time)
         editor.addWidget(add_button)
+        editor.addWidget(delete_button)
         layout.addLayout(editor)
 
         self._reminder_table = QTableWidget(0, 2)
@@ -353,6 +365,31 @@ class Dashboard(QDialog):
         total_minutes = total_remainder // 60
         self._today_label.setText(f"{total_hours} 小时 {total_minutes:02} 分钟")
 
+    def _delete_selected_task(self) -> None:
+        selected_rows = self._task_table.selectionModel().selectedRows()
+        if not selected_rows:
+            QMessageBox.information(self, "选择任务", "请先在任务列表中选择一条任务。")
+            return
+
+        tasks = self._tasks.list_tasks()
+        row = selected_rows[0].row()
+        if row >= len(tasks):
+            return
+        task = tasks[row]
+        answer = QMessageBox.question(
+            self,
+            "删除任务",
+            f"确定删除“{task.title}”吗？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        self._tasks.delete(task.id)
+        self._refresh_task_table()
+        self._refresh_timer_tasks()
+
     def _add_reminder(self) -> None:
         message = self._reminder_message.text()
         if not message.strip():
@@ -372,7 +409,9 @@ class Dashboard(QDialog):
         reminders = self._reminders.list_upcoming()
         self._reminder_table.setRowCount(len(reminders))
         for row, reminder in enumerate(reminders):
-            self._reminder_table.setItem(row, 0, QTableWidgetItem(reminder.message))
+            message_item = QTableWidgetItem(reminder.message)
+            message_item.setData(Qt.ItemDataRole.UserRole, reminder.id)
+            self._reminder_table.setItem(row, 0, message_item)
             display_time = datetime.fromisoformat(reminder.remind_at).strftime("%m-%d %H:%M")
             self._reminder_table.setItem(row, 1, QTableWidgetItem(display_time))
 
@@ -401,6 +440,25 @@ class Dashboard(QDialog):
                 except Exception:
                     # 桌宠动画异常不能阻止待处理提醒卡片显示。
                     pass
+        self._refresh_reminders()
+
+    def _delete_selected_reminder(self) -> None:
+        selected_rows = self._reminder_table.selectionModel().selectedRows()
+        if not selected_rows:
+            QMessageBox.information(self, "选择提醒", "请先在列表中选择一条要删除的提醒。")
+            return
+
+        item = self._reminder_table.item(selected_rows[0].row(), 0)
+        if item is None:
+            return
+        reminder_id = item.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(reminder_id, int):
+            return
+
+        self._reminders.delete(reminder_id)
+        dialog = self._active_reminder_dialogs.pop(reminder_id, None)
+        if dialog is not None:
+            dialog.accept()
         self._refresh_reminders()
 
     def _complete_reminder(self, reminder_id: int) -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 from PyQt6.QtWidgets import QApplication
 
@@ -23,7 +24,7 @@ def main() -> int:
     app.setApplicationName("StudyPet AI")
     app.setOrganizationName("StudyPet")
 
-    paths = AppPaths.for_current_user()
+    paths = AppPaths.for_project(Path(__file__).resolve().parent)
     paths.ensure_exists()
     StudyPetDatabase(paths.database_file)
     settings_service = SettingsService(paths.settings_file)
