@@ -5,7 +5,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QTimer
+from PyQt6.QtWidgets import QApplication, QMenu, QStyle, QSystemTrayIcon
 
 from ai.provider_manager import ProviderManager
 from config.settings_service import SettingsService
@@ -68,6 +69,48 @@ def main() -> int:
 
     window = PetWindow(on_open_dashboard=open_dashboard)
     window.show()
+
+    tray = QSystemTrayIcon(
+        app.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon),
+        app,
+    )
+    tray.setToolTip("StudyPet AI · 学习桌宠")
+    tray_menu = QMenu()
+    open_dashboard_action = tray_menu.addAction("打开控制面板")
+    toggle_pet_action = tray_menu.addAction("隐藏桌宠")
+    tray_menu.addSeparator()
+    quit_action = tray_menu.addAction("退出 StudyPet")
+
+    open_dashboard_action.triggered.connect(dashboard.open_home)
+
+    def toggle_pet() -> None:
+        if window is None:
+            return
+        if window.isVisible():
+            window.hide()
+            toggle_pet_action.setText("显示桌宠")
+        else:
+            window.show()
+            window.raise_()
+            window.activateWindow()
+            toggle_pet_action.setText("隐藏桌宠")
+
+    def on_tray_activated(reason: QSystemTrayIcon.ActivationReason) -> None:
+        if reason in {
+            QSystemTrayIcon.ActivationReason.Trigger,
+            QSystemTrayIcon.ActivationReason.DoubleClick,
+        }:
+            dashboard.open_home()
+
+    toggle_pet_action.triggered.connect(toggle_pet)
+    quit_action.triggered.connect(app.quit)
+    tray.activated.connect(on_tray_activated)
+    tray.setContextMenu(tray_menu)
+    # Keep a Python reference for the full application lifetime, then show it
+    # after Qt's event loop has started so Windows Explorer can register it.
+    app.study_pet_tray = tray  # type: ignore[attr-defined]
+    QTimer.singleShot(0, tray.show)
+
     return app.exec()
 
 
