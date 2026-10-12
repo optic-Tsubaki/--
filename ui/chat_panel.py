@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 
 import html
 
@@ -44,7 +45,11 @@ class ChatPanel(QWidget):
         super().__init__()
         self._settings_service = settings_service
         self._credentials = credentials
-        paths = AppPaths.for_project(Path(__file__).resolve().parents[1])
+        if getattr(sys, "frozen", False):
+            runtime_root = Path(sys.executable).resolve().parent
+        else:
+            runtime_root = Path(__file__).resolve().parents[1]
+        paths = AppPaths.for_project(runtime_root)
         paths.ensure_exists()
         self._chat_history = ChatHistory(paths.database_file)
         self._stored_history = self._chat_history.recent()
