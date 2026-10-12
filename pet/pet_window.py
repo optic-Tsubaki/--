@@ -41,6 +41,9 @@ class PetWindow(QWidget):
         self._svg_renderer: QSvgRenderer | None = None
         self._frame_index = 0
         self._animation_timer = QTimer(self)
+        # Each state is a short action that settles into a pose.  Repeating a
+        # two-frame sprite indefinitely reads as distracting flicker.
+        self._animation_timer.setSingleShot(True)
         self._animation_timer.timeout.connect(self._advance_animation)
         self._idle_phase = 0.0
         self._reaction_token = 0
@@ -196,10 +199,10 @@ class PetWindow(QWidget):
             return
         self._frame_index = 0
         if len(self._frames) > 1:
-            # Slower breathing/sleep cycles, with quicker feedback for focus
-            # and happy actions, keep the pixel animation readable.
+            # Play the transition once, then keep the finished pose visible.
+            # This keeps the desktop companion calm instead of flashing.
             self._animation_timer.start(
-                440 if state in {PetState.IDLE, PetState.SLEEP} else 240
+                700 if state in {PetState.IDLE, PetState.SLEEP} else 520
             )
         else:
             self._animation_timer.stop()
@@ -208,7 +211,8 @@ class PetWindow(QWidget):
         if not self._frames:
             self._animation_timer.stop()
             return
-        self._frame_index = (self._frame_index + 1) % len(self._frames)
+        self._frame_index = min(self._frame_index + 1, len(self._frames) - 1)
+        self._animation_timer.stop()
         self.update()
 
     def _advance_idle_motion(self) -> None:
