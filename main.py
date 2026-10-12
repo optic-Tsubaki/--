@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import QApplication
 from ai.provider_manager import ProviderManager
 from config.settings_service import SettingsService
 from core.app_paths import AppPaths
+from core.runtime_logging import configure_runtime_logging
 from core.task_manager import TaskManager
 from core.reminder_manager import ReminderManager
 from core.timer import FocusTimer
@@ -26,6 +27,7 @@ def main() -> int:
 
     paths = AppPaths.for_project(Path(__file__).resolve().parent)
     paths.ensure_exists()
+    configure_runtime_logging(paths.logs_dir)
     StudyPetDatabase(paths.database_file)
     settings_service = SettingsService(paths.settings_file)
     settings = settings_service.load()
@@ -58,7 +60,13 @@ def main() -> int:
         on_focus_finished=focus_finished,
         on_reminder_due=reminder_due,
     )
-    window = PetWindow(on_open_dashboard=dashboard.open_section)
+    def open_dashboard(section: str) -> None:
+        if section == "home":
+            dashboard.open_home()
+            return
+        dashboard.open_section(section)
+
+    window = PetWindow(on_open_dashboard=open_dashboard)
     window.show()
     return app.exec()
 

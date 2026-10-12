@@ -240,6 +240,10 @@ class PetWindow(QWidget):
 
         chat_action = menu.addAction("聊天")
         chat_action.triggered.connect(lambda: self._open_dashboard("chat"))
+        if self._on_open_dashboard is not None:
+            self._on_open_dashboard("home")
+        return
+
         for label, section in (
             ("今日任务", "tasks"),
             ("开始计时", "timer"),

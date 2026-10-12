@@ -11,6 +11,7 @@ from PyQt6.QtGui import QAction, QCloseEvent, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QComboBox,
     QDateTimeEdit,
+    QGridLayout,
     QDialog,
     QFileDialog,
     QFormLayout,
@@ -41,6 +42,13 @@ class Dashboard(QDialog):
         """关闭窗口时仅收起面板，桌宠继续运行。"""
         event.ignore()
         self.hide()
+
+    def open_home(self) -> None:
+        """显示控制面板的功能导航首页。"""
+        self._tabs.setCurrentWidget(self._home_page)
+        self.show()
+        self.raise_()
+        self.activateWindow()
 
     """Small, usable V0.2 panel for tasks and local focus sessions."""
 
@@ -90,6 +98,7 @@ class Dashboard(QDialog):
         self._ticker = QTimer(self)
         self._ticker.setInterval(500)
         self._ticker.timeout.connect(self._refresh_timer_display)
+        self._ticker.timeout.connect(self._refresh_home_summary)
         self._ticker.start()
 
         self._reminder_ticker = QTimer(self)
@@ -97,6 +106,9 @@ class Dashboard(QDialog):
         self._reminder_ticker.timeout.connect(self._check_due_reminders)
         self._reminder_ticker.start()
         self._build_reminders_tab()
+        self._build_home_tab()
+        self._tabs.tabBar().hide()
+        self._install_task_delete_column()
         self._task_table.setToolTip("选中任务后可按 Delete 删除")
         self._delete_task_action = QAction("删除所选任务", self._task_table)
         self._delete_task_action.triggered.connect(self._delete_selected_task)
@@ -106,6 +118,7 @@ class Dashboard(QDialog):
         self._task_delete_shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
         self._task_delete_shortcut.activated.connect(self._delete_selected_task)
         self._refresh_all()
+        self._tabs.setCurrentWidget(self._home_page)
 
     def _apply_style(self) -> None:
         """A compact dark-mint visual system shared by every dashboard tab."""
@@ -210,11 +223,106 @@ class Dashboard(QDialog):
         layout.addWidget(QLabel("结束计时后，时长会自动保存到本机。"))
         self._tabs.addTab(page, "专注计时")
 
+    def _build_home_tab(self) -> None:
+        self._home_page = QWidget()
+        layout = QVBoxLayout(self._home_page)
+        layout.setContentsMargins(30, 28, 30, 30)
+        layout.setSpacing(10)
+
+        eyebrow = QLabel("STUDYPET  ·  功能导航")
+        eyebrow.setObjectName("pageSubtitle")
+        title = QLabel("今天想从哪里开始？")
+        title.setObjectName("pageTitle")
+        hint = QLabel("把学习安排、专注、提醒与陪伴功能都放在这里。")
+        hint.setObjectName("pageSubtitle")
+        self._home_summary = QLabel()
+        self._home_summary.setObjectName("homeSummary")
+        self._home_summary.setStyleSheet(
+            "QLabel#homeSummary { background: #e3f1ec; color: #244d45; border: 1px solid #b5d8cc; "
+            "border-radius: 13px; padding: 13px 16px; font-size: 14px; }"
+        )
+        layout.addWidget(eyebrow)
+        layout.addWidget(title)
+        layout.addWidget(hint)
+        layout.addWidget(self._home_summary)
+
+        cards = QGridLayout()
+        cards.setHorizontalSpacing(14)
+        cards.setVerticalSpacing(14)
+        groups = (
+            (
+                "学习管理",
+                (
+                    ("今日任务", "安排并完成今天的小目标", "tasks"),
+                    ("专注计时", "开始一段沉浸学习", "timer"),
+                ),
+            ),
+            (
+                "节奏与回顾",
+                (
+                    ("提醒", "创建、延后或处理提醒", "reminders"),
+                    ("学习统计", "回看你的专注记录", "stats"),
+                ),
+            ),
+            (
+                "陪伴与系统",
+                (
+                    ("AI 陪伴", "和桌宠聊聊学习计划", "chat"),
+                    ("设置", "配置模型、外观与偏好", "settings"),
+                ),
+            ),
+        )
+        for group_index, (group_name, destinations) in enumerate(groups):
+            group_label = QLabel(group_name)
+            group_label.setStyleSheet(
+                "color: #54766e; font-size: 12px; font-weight: 700; letter-spacing: 1px; "
+                "padding: 3px 2px;"
+            )
+            cards.addWidget(group_label, group_index * 2, 0, 1, 2)
+            for column, (name, description, section) in enumerate(destinations):
+                card = QPushButton(f"{name}\n{description}")
+                card.setObjectName("settingsNavCard" if section == "settings" else "navCard")
+                card.setCursor(Qt.CursorShape.PointingHandCursor)
+                card.setMinimumHeight(92)
+                if section == "settings":
+                    card.setStyleSheet(
+                        "QPushButton#settingsNavCard { background: #f6d790; color: #513b10; "
+                        "border: 1px solid #dda846; border-radius: 16px; padding: 16px; "
+                        "font-size: 15px; font-weight: 700; text-align: left; } "
+                        "QPushButton#settingsNavCard:hover { background: #ffe6aa; border-color: #bf7e16; }"
+                    )
+                else:
+                    card.setStyleSheet(
+                        "QPushButton#navCard { background: #dcefe8; color: #214b43; "
+                        "border: 1px solid #b4d8cc; border-radius: 16px; padding: 16px; "
+                        "font-size: 15px; font-weight: 700; text-align: left; } "
+                        "QPushButton#navCard:hover { background: #c9e6db; border-color: #72a99a; } "
+                        "QPushButton#navCard:pressed { background: #b5d9cd; }"
+                    )
+                card.clicked.connect(
+                    lambda _checked=False, target=section: self._open_home_destination(target)
+                )
+                cards.addWidget(card, group_index * 2 + 1, column)
+
+        layout.addLayout(cards)
+        layout.addStretch(1)
+        self._tabs.addTab(self._home_page, "功能首页")
+
+    def _open_home_destination(self, section: str) -> None:
+        if section == "reminders":
+            self._tabs.setCurrentWidget(self._reminders_page)
+            self.show()
+            self.raise_()
+            self.activateWindow()
+            return
+        self.open_section(section)
+
     def _build_reminders_tab(self) -> None:
         if hasattr(self, "_reminder_table"):
             return
 
         page = QWidget()
+        self._reminders_page = page
         layout = QVBoxLayout(page)
         layout.setContentsMargins(24, 22, 24, 24)
         layout.setSpacing(14)
@@ -322,6 +430,15 @@ class Dashboard(QDialog):
         self._refresh_timer_display()
         self._refresh_reminders()
         self._refresh_session_table()
+        self._refresh_home_summary()
+
+    def _refresh_home_summary(self) -> None:
+        tasks = self._tasks.list_tasks()
+        completed = sum(task.completed for task in tasks)
+        focused = self._format_duration(self._focus_timer.total_today_seconds())
+        self._home_summary.setText(
+            f"今日进度  {completed}/{len(tasks)} 项任务已完成    ·    已专注 {focused}"
+        )
 
     def _refresh_task_table(self) -> None:
         self._task_table.blockSignals(True)
@@ -364,6 +481,65 @@ class Dashboard(QDialog):
         total_hours, total_remainder = divmod(total, 3600)
         total_minutes = total_remainder // 60
         self._today_label.setText(f"{total_hours} 小时 {total_minutes:02} 分钟")
+
+    def _install_task_delete_column(self) -> None:
+        """在任务列表中增加直观的单行删除入口。"""
+        delete_column = self._task_table.property("delete_column")
+        if not isinstance(delete_column, int):
+            delete_column = self._task_table.columnCount()
+            self._task_table.insertColumn(delete_column)
+            self._task_table.setHorizontalHeaderItem(delete_column, QTableWidgetItem("操作"))
+            self._task_table.setProperty("delete_column", delete_column)
+            self._task_table.setColumnWidth(delete_column, 86)
+            self._task_table.horizontalHeader().setStretchLastSection(False)
+
+        model = self._task_table.model()
+        model.rowsInserted.connect(
+            lambda *_: QTimer.singleShot(0, self._render_task_delete_buttons)
+        )
+        model.modelReset.connect(
+            lambda: QTimer.singleShot(0, self._render_task_delete_buttons)
+        )
+        self._render_task_delete_buttons()
+
+    def _render_task_delete_buttons(self) -> None:
+        delete_column = self._task_table.property("delete_column")
+        if not isinstance(delete_column, int):
+            return
+
+        tasks = self._tasks.list_tasks()
+        for row, task in enumerate(tasks[: self._task_table.rowCount()]):
+            button = QPushButton("删除")
+            button.setObjectName("dangerButton")
+            button.setMinimumWidth(68)
+            button.setStyleSheet(
+                "QPushButton#dangerButton { background: #5b3035; color: #ffdfe1; "
+                "border: 1px solid #bc6770; border-radius: 8px; padding: 5px 10px; font-weight: 700; } "
+                "QPushButton#dangerButton:hover { background: #803d45; }"
+            )
+            button.clicked.connect(
+                lambda _checked=False, task_id=task.id: self._delete_task_by_id(task_id)
+            )
+            self._task_table.setCellWidget(row, delete_column, button)
+
+    def _delete_task_by_id(self, task_id: int) -> None:
+        task = next((item for item in self._tasks.list_tasks() if item.id == task_id), None)
+        if task is None:
+            return
+        answer = QMessageBox.question(
+            self,
+            "删除任务",
+            f"确定删除“{task.title}”吗？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        self._tasks.delete(task.id)
+        self._refresh_task_table()
+        self._refresh_timer_tasks()
+        QTimer.singleShot(0, self._render_task_delete_buttons)
 
     def _delete_selected_task(self) -> None:
         selected_rows = self._task_table.selectionModel().selectedRows()
