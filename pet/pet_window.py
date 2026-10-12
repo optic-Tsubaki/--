@@ -83,13 +83,30 @@ class PetWindow(QWidget):
     def _load_character_frames(self, state: PetState) -> None:
         """Load ordered PNG frames for a state and start their animation loop."""
         images_dir = Path(__file__).parent.parent / "resources" / "images"
-        frame_paths = sorted(images_dir.glob(f"{state}_*.png"))
-        if not frame_paths:
-            single_frame = images_dir / f"{state}.png"
-            frame_paths = [single_frame] if single_frame.exists() else []
+        project_root = images_dir.parent.parent
+        vector_idle = project_root / "图片" / "霓虹狐耳 chibi 少女贴纸.svg"
 
-        self._frames = [QPixmap(str(path)) for path in frame_paths]
-        self._frames = [frame for frame in self._frames if not frame.isNull()]
+        # Use the supplied vector character for the main idle state. PNG frames
+        # remain available for animation states and as a portable fallback.
+        candidates: list[list[Path]] = []
+        if state is PetState.IDLE and vector_idle.exists():
+            candidates.append([vector_idle])
+
+        png_frames = sorted(images_dir.glob(f"{state}_*.png"))
+        if png_frames:
+            candidates.append(png_frames)
+        else:
+            single_frame = images_dir / f"{state}.png"
+            if single_frame.exists():
+                candidates.append([single_frame])
+
+        self._frames = []
+        for frame_paths in candidates:
+            loaded_frames = [QPixmap(str(path)) for path in frame_paths]
+            loaded_frames = [frame for frame in loaded_frames if not frame.isNull()]
+            if loaded_frames:
+                self._frames = loaded_frames
+                break
         self._frame_index = 0
         if len(self._frames) > 1:
             self._animation_timer.start(260)
