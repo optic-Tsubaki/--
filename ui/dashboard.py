@@ -23,6 +23,7 @@ from core.task_manager import TaskManager
 from core.timer import FocusTimer
 from config.settings_service import SettingsService
 from security.credential_store import CredentialStore
+from ui.chat_panel import ChatPanel
 from ui.settings_panel import SettingsPanel
 
 
@@ -51,6 +52,7 @@ class Dashboard(QDialog):
         self._build_tasks_tab()
         self._build_timer_tab()
         self._build_stats_tab()
+        self._build_chat_tab(settings_service, credentials)
         self._build_settings_tab(settings_service, credentials)
 
         layout = QVBoxLayout(self)
@@ -63,7 +65,7 @@ class Dashboard(QDialog):
         self._refresh_all()
 
     def open_section(self, section: str = "tasks") -> None:
-        index = {"tasks": 0, "timer": 1, "stats": 2, "settings": 3}.get(section, 0)
+        index = {"tasks": 0, "timer": 1, "stats": 2, "chat": 3, "settings": 4}.get(section, 0)
         self._refresh_all()
         self._tabs.setCurrentIndex(index)
         self.show()
@@ -124,6 +126,9 @@ class Dashboard(QDialog):
         self, settings_service: SettingsService, credentials: CredentialStore
     ) -> None:
         self._tabs.addTab(SettingsPanel(settings_service, credentials), "设置")
+
+    def _build_chat_tab(self, settings_service: SettingsService, credentials: CredentialStore) -> None:
+        self._tabs.addTab(ChatPanel(settings_service, credentials), "AI 聊天")
 
     def _add_task(self) -> None:
         try:

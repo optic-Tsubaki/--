@@ -222,7 +222,7 @@ class PetWindow(QWidget):
         menu.addSeparator()
 
         chat_action = menu.addAction("聊天")
-        chat_action.triggered.connect(lambda: self.speak("AI 聊天将在完成设置界面后启用。"))
+        chat_action.triggered.connect(lambda: self._open_dashboard("chat"))
         for label, section in (("今日任务", "tasks"), ("开始计时", "timer"), ("学习统计", "stats")):
             action = menu.addAction(label)
             action.triggered.connect(lambda checked=False, value=section: self._open_dashboard(value))

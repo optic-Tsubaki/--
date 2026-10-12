@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QComboBox,
     QFormLayout,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -16,6 +18,45 @@ from PyQt6.QtWidgets import (
 from config.ai_config import AIConfig, ProviderKind
 from config.settings_service import AppSettings, SettingsService
 from security.credential_store import CredentialStore
+from ai.providers.base import ChatMessage
+from ai.providers.ollama import OllamaProvider
+from ai.providers.openai_compatible import OpenAICompatibleProvider
+
+
+class ConnectionTestWorker(QThread):
+    """Performs an explicitly user-requested provider check off the UI thread."""
+
+    succeeded = pyqtSignal(str)
+    failed = pyqtSignal(str)
+
+    def __init__(self, config: AIConfig, temporary_api_key: str, credentials: CredentialStore) -> None:
+        super().__init__()
+        self._config = config
+        self._temporary_api_key = temporary_api_key
+        self._credentials = credentials
+
+    def run(self) -> None:
+        try:
+            if self._config.provider is ProviderKind.OPENAI_COMPATIBLE:
+                api_key = self._temporary_api_key or self._credentials.get_api_key(self._config.provider)
+                if not api_key:
+                    raise RuntimeError("请输入 API Key，或先保存已有的 API Key。")
+                provider = OpenAICompatibleProvider(
+                    self._config.base_url, self._config.model, api_key
+                )
+            elif self._config.provider is ProviderKind.OLLAMA:
+                provider = OllamaProvider(self._config.base_url, self._config.model)
+            else:
+                raise RuntimeError("请选择 AI 服务商。")
+            reply = provider.chat(
+                [ChatMessage("user", "Reply with only: connection-ok")]
+            )
+        except RuntimeError as error:
+            self.failed.emit(str(error))
+        except Exception as error:
+            self.failed.emit(f"测试失败：{error}")
+        else:
+            self.succeeded.emit(reply)
 
 
 class SettingsPanel(QWidget):
@@ -31,6 +72,7 @@ class SettingsPanel(QWidget):
         super().__init__()
         self._settings_service = settings_service
         self._credentials = credentials
+        self._test_worker: ConnectionTestWorker | None = None
         self._build_ui()
         self.load_settings()
 
@@ -65,9 +107,14 @@ class SettingsPanel(QWidget):
         self._status = QLabel()
         self._status.setWordWrap(True)
         layout.addWidget(self._status)
+        actions = QHBoxLayout()
+        self._test_button = QPushButton("测试当前输入")
+        self._test_button.clicked.connect(self.test_connection)
         save_button = QPushButton("保存 AI 设置")
         save_button.clicked.connect(self.save_settings)
-        layout.addWidget(save_button)
+        actions.addWidget(self._test_button)
+        actions.addWidget(save_button)
+        layout.addLayout(actions)
         layout.addStretch()
         self._provider.currentIndexChanged.connect(self._refresh_enabled_state)
 
@@ -111,3 +158,38 @@ class SettingsPanel(QWidget):
             self._status.setText("可使用 OpenAI、DeepSeek 等兼容服务，或本机 Ollama。")
         else:
             self._status.setText("普通模式不需要 API Key。")
+
+    def test_connection(self) -> None:
+        """Test the form's current values without persisting them."""
+        if self._test_worker is not None:
+            return
+        config = AIConfig(
+            provider=self._provider.currentData(),
+            base_url=self._base_url.text().strip(),
+            model=self._model.text().strip(),
+        )
+        if not config.is_enabled:
+            QMessageBox.information(self, "无法测试", "请先选择 AI 服务商。")
+            return
+        try:
+            config.validate()
+        except ValueError as error:
+            QMessageBox.warning(self, "无法测试", str(error))
+            return
+        self._status.setText("正在测试当前输入；测试不会保存配置或 API Key…")
+        self._test_button.setEnabled(False)
+        self._test_worker = ConnectionTestWorker(config, self._api_key.text().strip(), self._credentials)
+        self._test_worker.succeeded.connect(self._test_succeeded)
+        self._test_worker.failed.connect(self._test_failed)
+        self._test_worker.finished.connect(self._test_finished)
+        self._test_worker.start()
+
+    def _test_succeeded(self, reply: str) -> None:
+        self._status.setText(f"连接成功。服务回复：{reply[:120]}")
+
+    def _test_failed(self, error: str) -> None:
+        self._status.setText(f"连接失败：{error}")
+
+    def _test_finished(self) -> None:
+        self._test_button.setEnabled(True)
+        self._test_worker = None

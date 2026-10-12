@@ -3,6 +3,13 @@ __pycache__/
 .venv/
 venv/
 *.db
+*.sqlite
+*.sqlite3
+settings.json
+ai_config.json
+*.log
+.env
+.env.*
 dist/
 build/
 *.spec
