@@ -21,7 +21,8 @@ renders a small built-in starter mascot.
 
 StudyPet keeps user-created files outside the application folder so packaging the
 app does not put writable data beside the executable. On Windows the application
-uses `%LOCALAPPDATA%\\StudyPet\\` for settings, the SQLite database, and logs.
+uses `%LOCALAPPDATA%\\StudyPet\\` for settings and logs. Tasks and focus records
+are stored separately in `%LOCALAPPDATA%\\StudyPet\\records\\studypet.db`.
 
 AI provider metadata (provider, base URL, and model) is stored in a JSON settings
 file. API keys are deliberately excluded from that file and are stored through

@@ -3,8 +3,17 @@
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+
+
+@dataclass(frozen=True, slots=True)
+class StudySession:
+    id: int
+    task_title: str | None
+    started_at: str
+    duration_seconds: int
 
 
 class FocusTimer:
@@ -51,3 +60,15 @@ class FocusTimer:
                 (today,),
             ).fetchone()[0]
         return int(stored) + self.elapsed_seconds()
+
+    def list_recent_sessions(self, limit: int = 12) -> list[StudySession]:
+        """Return saved sessions with their associated task title when available."""
+        with sqlite3.connect(self._database_file) as connection:
+            rows = connection.execute(
+                "SELECT study_sessions.id, tasks.title, study_sessions.started_at, "
+                "study_sessions.duration_seconds "
+                "FROM study_sessions LEFT JOIN tasks ON tasks.id = study_sessions.task_id "
+                "ORDER BY study_sessions.id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [StudySession(row[0], row[1], row[2], row[3]) for row in rows]

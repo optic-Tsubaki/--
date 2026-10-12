@@ -80,11 +80,11 @@ class SettingsPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 28, 28, 28)
         title = QLabel("AI 模型设置")
-        title.setStyleSheet("font-size: 22px; font-weight: 600;")
+        title.setStyleSheet("font-size: 22px; font-weight: 700; color: #193C37;")
         layout.addWidget(title)
         note = QLabel("API Key 仅保存在 Windows 凭据管理器，不会写入设置文件或数据库。")
         note.setWordWrap(True)
-        note.setStyleSheet("color: #52616b; padding: 4px 0 12px;")
+        note.setStyleSheet("color: #6A7E78; padding: 4px 0 12px;")
         layout.addWidget(note)
 
         form = QFormLayout()

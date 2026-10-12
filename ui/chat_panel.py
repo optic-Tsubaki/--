@@ -48,8 +48,12 @@ class ChatPanel(QWidget):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        title = QLabel("和 StudyPet 聊聊")
+        title.setStyleSheet("font-size: 21px; font-weight: 700; color: #193C37;")
+        layout.addWidget(title)
         note = QLabel("聊天会使用“设置”中由你自行配置的 AI 服务。")
-        note.setStyleSheet("color: #52616b;")
+        note.setStyleSheet("color: #6A7E78; padding-bottom: 4px;")
         layout.addWidget(note)
         self._history = QTextEdit()
         self._history.setReadOnly(True)

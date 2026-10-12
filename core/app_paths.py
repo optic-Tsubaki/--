@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,6 +17,7 @@ class AppPaths:
 
     root: Path
     settings_file: Path
+    records_dir: Path
     database_file: Path
     logs_dir: Path
 
@@ -28,11 +30,16 @@ class AppPaths:
         return cls(
             root=root,
             settings_file=root / "settings.json",
-            database_file=root / "studypet.db",
+            records_dir=root / "records",
+            database_file=root / "records" / "studypet.db",
             logs_dir=root / "logs",
         )
 
     def ensure_exists(self) -> None:
         """Create only the application's writable directories."""
         self.root.mkdir(parents=True, exist_ok=True)
+        self.records_dir.mkdir(parents=True, exist_ok=True)
         self.logs_dir.mkdir(parents=True, exist_ok=True)
+        legacy_database = self.root / "studypet.db"
+        if legacy_database.exists() and not self.database_file.exists():
+            shutil.move(str(legacy_database), str(self.database_file))

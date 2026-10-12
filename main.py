@@ -32,7 +32,24 @@ def main() -> int:
 
     task_manager = TaskManager(paths.database_file)
     focus_timer = FocusTimer(paths.database_file)
-    dashboard = Dashboard(task_manager, focus_timer, settings_service, CredentialStore())
+    window: PetWindow | None = None
+
+    def focus_started(task_label: str) -> None:
+        if window is not None:
+            window.begin_focus_session(task_label)
+
+    def focus_finished(duration_seconds: int) -> None:
+        if window is not None:
+            window.finish_focus_session(duration_seconds)
+
+    dashboard = Dashboard(
+        task_manager,
+        focus_timer,
+        settings_service,
+        CredentialStore(),
+        on_focus_started=focus_started,
+        on_focus_finished=focus_finished,
+    )
     window = PetWindow(on_open_dashboard=dashboard.open_section)
     window.show()
     return app.exec()

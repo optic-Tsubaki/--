@@ -85,6 +85,18 @@ class PetWindow(QWidget):
         self._bubble.raise_()
         self._bubble_timer.start(duration_ms)
 
+    def begin_focus_session(self, task_label: str) -> None:
+        """Reflect an active productivity session in the desktop companion."""
+        self._controller.set_state(PetState.FOCUS)
+        self.speak(f"开始专注：{task_label}", duration_ms=3600)
+
+    def finish_focus_session(self, duration_seconds: int) -> None:
+        """Celebrate a saved focus session and return to the idle companion."""
+        minutes = max(1, duration_seconds // 60)
+        self._controller.set_state(PetState.HAPPY)
+        self.speak(f"完成啦！这次专注了 {minutes} 分钟。", duration_ms=4200)
+        QTimer.singleShot(2400, lambda: self._controller.set_state(PetState.IDLE))
+
     def _set_state(self, state: PetState) -> None:
         self._state = state
         self._load_character_frames(state)
