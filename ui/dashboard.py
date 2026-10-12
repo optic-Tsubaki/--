@@ -32,6 +32,7 @@ from core.timer import FocusTimer
 from config.settings_service import SettingsService
 from security.credential_store import CredentialStore
 from ui.chat_panel import ChatPanel
+from ui.reminder_dialog import ReminderDialog
 from ui.settings_panel import SettingsPanel
 
 
@@ -61,6 +62,7 @@ class Dashboard(QDialog):
         self._on_focus_started = on_focus_started
         self._on_focus_finished = on_focus_finished
         self._on_reminder_due = on_reminder_due
+        self._active_reminder_dialogs: dict[int, ReminderDialog] = {}
         self.setWindowTitle("StudyPet 控制面板")
         self.setMinimumSize(680, 520)
         self._apply_style()
@@ -376,17 +378,49 @@ class Dashboard(QDialog):
 
     def _check_due_reminders(self) -> None:
         due_reminders = self._reminders.claim_due()
-        if not due_reminders:
-            return
-
         for reminder in due_reminders:
+            if reminder.id in self._active_reminder_dialogs:
+                continue
+
+            dialog = ReminderDialog(
+                reminder.message,
+                on_complete=lambda reminder_id=reminder.id: self._complete_reminder(reminder_id),
+                on_snooze=lambda reminder_id=reminder.id: self._snooze_reminder(reminder_id),
+            )
+            self._active_reminder_dialogs[reminder.id] = dialog
+            dialog.finished.connect(
+                lambda _result, reminder_id=reminder.id: self._restore_reminder_dialog(reminder_id)
+            )
+            dialog.show()
+            dialog.raise_()
+            dialog.activateWindow()
+
             if self._on_reminder_due is not None:
                 try:
                     self._on_reminder_due(reminder.message)
                 except Exception:
-                    # 提醒功能不能影响正在运行的桌宠；提醒已被安全领取。
-                    QMessageBox.information(self, "学习提醒", reminder.message)
+                    # 桌宠动画异常不能阻止待处理提醒卡片显示。
+                    pass
         self._refresh_reminders()
+
+    def _complete_reminder(self, reminder_id: int) -> None:
+        self._reminders.complete(reminder_id)
+        self._active_reminder_dialogs.pop(reminder_id, None)
+        self._refresh_reminders()
+
+    def _snooze_reminder(self, reminder_id: int) -> None:
+        self._reminders.snooze(reminder_id)
+        self._active_reminder_dialogs.pop(reminder_id, None)
+        self._refresh_reminders()
+
+    def _restore_reminder_dialog(self, reminder_id: int) -> None:
+        """任何非“完成／稍后”造成的关闭都会立刻恢复待处理提醒。"""
+        dialog = self._active_reminder_dialogs.get(reminder_id)
+        if dialog is None:
+            return
+        QTimer.singleShot(0, dialog.show)
+        QTimer.singleShot(0, dialog.raise_)
+        QTimer.singleShot(0, dialog.activateWindow)
 
     def _refresh_session_table(self) -> None:
         sessions = self._focus_timer.list_recent_sessions()

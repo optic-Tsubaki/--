@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 
@@ -54,6 +54,11 @@ class ReminderManager:
         return [Reminder(row[0], row[1], row[2], bool(row[3])) for row in rows]
 
     def claim_due(self, now: datetime | None = None) -> list[Reminder]:
+        """返回到点但尚未处理的提醒。
+
+        名称为兼容已有调用而保留；提醒不会在显示时自动完成，只有用户
+        选择完成或稍后提醒后才会改变状态。
+        """
         current_time = (now or datetime.now()).isoformat(timespec="seconds")
         with sqlite3.connect(self._database_file) as connection:
             rows = connection.execute(
@@ -65,10 +70,20 @@ class ReminderManager:
                 """,
                 (current_time,),
             ).fetchall()
-            if rows:
-                connection.executemany(
-                    "UPDATE reminders SET notified = 1 WHERE id = ?",
-                    [(row[0],) for row in rows],
-                )
 
         return [Reminder(row[0], row[1], row[2], bool(row[3])) for row in rows]
+
+    def complete(self, reminder_id: int) -> None:
+        with sqlite3.connect(self._database_file) as connection:
+            connection.execute(
+                "UPDATE reminders SET notified = 1 WHERE id = ?",
+                (reminder_id,),
+            )
+
+    def snooze(self, reminder_id: int, minutes: int = 10) -> None:
+        later = datetime.now() + timedelta(minutes=minutes)
+        with sqlite3.connect(self._database_file) as connection:
+            connection.execute(
+                "UPDATE reminders SET remind_at = ?, notified = 0 WHERE id = ?",
+                (later.isoformat(timespec="seconds"), reminder_id),
+            )
