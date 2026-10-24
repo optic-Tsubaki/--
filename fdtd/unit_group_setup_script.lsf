@@ -1,0 +1,40 @@
+# 将本文件内容粘贴到：unit group -> Setup -> Script
+# 需要已存在以下对象：TiO2_l1、TiO2_l2、SiO2_substrate。
+# 需要已建立以下 User Properties：l1_x_span、l1_y_span、l2_x_span、l2_y_span、gap、h1、h2。
+# l1 是左柱（x<0），l2 是右柱（x>0）；gap 是两柱最近边缘的 x 向间隔。
+
+# 假设 unit group 原点 z=0 位于 SiO2 基底上表面。
+# 若原模型中基底上表面不是 z=0，只需将 z_base 改为实际高度；其余关系不变。
+z_base = 0;
+
+# 结构合法性提示：不能出现负尺寸或沿 x 的互相穿透。
+if ((l1_x_span <= 0) | (l1_y_span <= 0) | (l2_x_span <= 0) | (l2_y_span <= 0)) {
+    ?"WARNING: pillar lateral spans must be positive.";
+}
+if ((h1 <= 0) | (h2 <= 0)) {
+    ?"WARNING: pillar heights h1 and h2 must be positive.";
+}
+if (gap < 0) {
+    ?"WARNING: gap < 0 means the two pillars overlap.";
+}
+
+# 左柱 l1：右边缘位于 -gap/2，故中心 x = -(gap + l1_x_span)/2。
+select("TiO2_l1");
+set("x span",l1_x_span);
+set("y span",l1_y_span);
+set("z span",h1);
+set("x",-(gap+l1_x_span)/2);
+set("y",0);
+set("z",z_base+h1/2);
+
+# 右柱 l2：左边缘位于 +gap/2，故中心 x = +(gap + l2_x_span)/2。
+select("TiO2_l2");
+set("x span",l2_x_span);
+set("y span",l2_y_span);
+set("z span",h2);
+set("x",+(gap+l2_x_span)/2);
+set("y",0);
+set("z",z_base+h2/2);
+
+# 不在此处设置材料：保留 TiO2_l1/l2 原先的 TiO2 (Titanium Dioxide) - Devore，
+# 并保留 SiO2_substrate 原先的 SiO2 (Glass) - Palik。
