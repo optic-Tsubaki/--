@@ -39,8 +39,7 @@ if ((l1_y_min < substrate_y_min-tolerance) | (l1_y_max > substrate_y_max+toleran
 
 if (geometry_is_valid == 1) {
     # 左柱 l1：其中心坐标由 User Properties l1_x、l1_y 给定。
-    select("TiO2_l1");
-    set("enabled",1);
+    select("unit group::TiO2_l1");
     set("x span",l1_x_span);
     set("y span",l1_y_span);
     set("z span",h1);
@@ -49,8 +48,7 @@ if (geometry_is_valid == 1) {
     set("z",z_base+h1/2);
 
     # 右柱 l2：由左柱右边缘、gap 与自身宽度自动定位。
-    select("TiO2_l2");
-    set("enabled",1);
+    select("unit group::TiO2_l2");
     set("x span",l2_x_span);
     set("y span",l2_y_span);
     set("z span",h2);
@@ -62,9 +60,9 @@ if (geometry_is_valid == 1) {
 } else {
     # 直接排除非法几何：禁用两根 TiO2 柱，避免把越界/重叠结构带入仿真。
     # 扫描驱动程序应将这类状态标记为 skipped，而不是记录其裸基底透射结果。
-    select("TiO2_l1");
+    select("unit group::TiO2_l1");
     set("enabled",0);
-    select("TiO2_l2");
+    select("unit group::TiO2_l2");
     set("enabled",0);
     ?"INVALID geometry excluded: check gap, spans, heights, and SiO2 bounds.";
     ?"l1 x = ["+num2str(l1_x_min*1e6)+", "+num2str(l1_x_max*1e6)+"] um; l2 x = ["+num2str(l2_x_min*1e6)+", "+num2str(l2_x_max*1e6)+"] um";
