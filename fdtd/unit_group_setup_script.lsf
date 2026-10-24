@@ -1,6 +1,3 @@
-# 将本文件内容粘贴到：unit group -> Setup -> Script
-# 需要已存在以下对象：TiO2_l1、TiO2_l2、SiO2_substrate。
-# User Properties：l1_x_span、l1_y_span、l2_x_span、l2_y_span、gap、h1、h2、l1_x、l1_y。
 # l1_x、l1_y 是左柱中心坐标，类型必须为 Length；l1 是左柱，l2 是右柱。
 # gap 是两柱最近边缘的 x 向间隔；右柱坐标由左柱自动确定。
 
