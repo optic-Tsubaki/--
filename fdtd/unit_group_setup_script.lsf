@@ -1,40 +1,71 @@
 # 将本文件内容粘贴到：unit group -> Setup -> Script
 # 需要已存在以下对象：TiO2_l1、TiO2_l2、SiO2_substrate。
-# 需要已建立以下 User Properties：l1_x_span、l1_y_span、l2_x_span、l2_y_span、gap、h1、h2。
+# User Properties：l1_x_span、l1_y_span、l2_x_span、l2_y_span、gap、h1、h2。
 # l1 是左柱（x<0），l2 是右柱（x>0）；gap 是两柱最近边缘的 x 向间隔。
 
-# 假设 unit group 原点 z=0 位于 SiO2 基底上表面。
-# 若原模型中基底上表面不是 z=0，只需将 z_base 改为实际高度；其余关系不变。
+# SiO2_substrate 的实测相对坐标范围：
+# x = [-0.85, +0.85] um；y = [-0.25, +0.25] um；上表面 z = 0 um。
+substrate_x_min = -0.85e-6;
+substrate_x_max =  0.85e-6;
+substrate_y_min = -0.25e-6;
+substrate_y_max =  0.25e-6;
 z_base = 0;
+tolerance = 1e-15;
 
-# 结构合法性提示：不能出现负尺寸或沿 x 的互相穿透。
-if ((l1_x_span <= 0) | (l1_y_span <= 0) | (l2_x_span <= 0) | (l2_y_span <= 0)) {
-    ?"WARNING: pillar lateral spans must be positive.";
+# 两柱的实际边界。l1 的右边缘与 l2 的左边缘相隔 gap。
+l1_x_min = -gap/2-l1_x_span;
+l1_x_max = -gap/2;
+l2_x_min =  gap/2;
+l2_x_max =  gap/2+l2_x_span;
+l1_y_min = -l1_y_span/2;
+l1_y_max =  l1_y_span/2;
+l2_y_min = -l2_y_span/2;
+l2_y_max =  l2_y_span/2;
+
+# 合法条件：正尺寸、gap 非负，且两柱的整个底面都在 SiO2 顶面投影内。
+geometry_is_valid = 1;
+if ((gap < -tolerance) | (l1_x_span <= 0) | (l1_y_span <= 0) | (l2_x_span <= 0) | (l2_y_span <= 0) | (h1 <= 0) | (h2 <= 0)) {
+    geometry_is_valid = 0;
 }
-if ((h1 <= 0) | (h2 <= 0)) {
-    ?"WARNING: pillar heights h1 and h2 must be positive.";
+if ((l1_x_min < substrate_x_min-tolerance) | (l1_x_max > substrate_x_max+tolerance) | (l2_x_min < substrate_x_min-tolerance) | (l2_x_max > substrate_x_max+tolerance)) {
+    geometry_is_valid = 0;
 }
-if (gap < 0) {
-    ?"WARNING: gap < 0 means the two pillars overlap.";
+if ((l1_y_min < substrate_y_min-tolerance) | (l1_y_max > substrate_y_max+tolerance) | (l2_y_min < substrate_y_min-tolerance) | (l2_y_max > substrate_y_max+tolerance)) {
+    geometry_is_valid = 0;
 }
 
-# 左柱 l1：右边缘位于 -gap/2，故中心 x = -(gap + l1_x_span)/2。
-select("TiO2_l1");
-set("x span",l1_x_span);
-set("y span",l1_y_span);
-set("z span",h1);
-set("x",-(gap+l1_x_span)/2);
-set("y",0);
-set("z",z_base+h1/2);
+if (geometry_is_valid == 1) {
+    # 左柱 l1：右边缘位于 -gap/2。
+    select("TiO2_l1");
+    set("enabled",1);
+    set("x span",l1_x_span);
+    set("y span",l1_y_span);
+    set("z span",h1);
+    set("x",-(gap+l1_x_span)/2);
+    set("y",0);
+    set("z",z_base+h1/2);
 
-# 右柱 l2：左边缘位于 +gap/2，故中心 x = +(gap + l2_x_span)/2。
-select("TiO2_l2");
-set("x span",l2_x_span);
-set("y span",l2_y_span);
-set("z span",h2);
-set("x",+(gap+l2_x_span)/2);
-set("y",0);
-set("z",z_base+h2/2);
+    # 右柱 l2：左边缘位于 +gap/2。
+    select("TiO2_l2");
+    set("enabled",1);
+    set("x span",l2_x_span);
+    set("y span",l2_y_span);
+    set("z span",h2);
+    set("x",+(gap+l2_x_span)/2);
+    set("y",0);
+    set("z",z_base+h2/2);
 
-# 不在此处设置材料：保留 TiO2_l1/l2 原先的 TiO2 (Titanium Dioxide) - Devore，
-# 并保留 SiO2_substrate 原先的 SiO2 (Glass) - Palik。
+    ?"Geometry valid: two pillars are fully inside SiO2 substrate.";
+} else {
+    # 直接排除非法几何：禁用两根 TiO2 柱，避免把越界/重叠结构带入仿真。
+    # 扫描驱动程序应将这类状态标记为 skipped，而不是记录其裸基底透射结果。
+    select("TiO2_l1");
+    set("enabled",0);
+    select("TiO2_l2");
+    set("enabled",0);
+    ?"INVALID geometry excluded: check gap, spans, heights, and SiO2 bounds.";
+    ?"l1 x = ["+num2str(l1_x_min*1e6)+", "+num2str(l1_x_max*1e6)+"] um; l2 x = ["+num2str(l2_x_min*1e6)+", "+num2str(l2_x_max*1e6)+"] um";
+}
+
+# 不在此处设置材料：保留 TiO2_l1/l2 的 TiO2 (Titanium Dioxide) - Devore，
+# 以及 SiO2_substrate 的 SiO2 (Glass) - Palik。
