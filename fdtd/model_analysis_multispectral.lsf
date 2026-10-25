@@ -120,11 +120,13 @@ if ((eta_target < -1e-12) | (eta_target > T_total+1e-6)) {
     break;
 }
 
-# 5) gratingvector 返回 N x M x P x 3 复振幅数组；P=1，最后一维 2 对应 Ey。
+# 5) gratingvector 的通用返回形式为 N x M x P x 3。
+#    本脚本只传入一个频点 idx_T，单元素 P 维被压缩，故实际为 N x M x 3；
+#    第三维索引 2 对应 Ey。
 # 相位参考为 gratingvector 在 1 m 半球投影面上的复场参考，
 # 只适合在光源、监视器和投影设置保持一致时比较相对相位。
 Gv = gratingvector(T_monitor,idx_T);
-Ey_target = Gv(idx_n,idx_m,1,2);
+Ey_target = Gv(idx_n,idx_m,2);
 if (abs(Ey_target) < amplitude_tolerance) {
     ?"ERROR: target-order Ey amplitude is too small; phase_target is unreliable.";
     break;
