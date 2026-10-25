@@ -6,8 +6,11 @@
 # T、R 位于 model 下的 analysis group 内，必须使用完整对象路径。
 T_monitor = "analysis group::T";
 R_monitor = "analysis group::R";
-lambda_tolerance = 2e-9;       # 工作波长自动匹配容差：2 nm
+lambda_tolerance = 0.25e-9;    # 目标波长与最近监视器采样点的最大允许偏差：0.25 nm
 amplitude_tolerance = 1e-8;    # 目标 Ey 振幅低于此值时，相位不可靠
+
+# 调试标记：每次顶层 Analysis Script 真正开始执行时，均应出现在 Script Output。
+?"model Analysis Script started.";
 
 # 先写入不可能的实数哨兵值。若分析异常中断，Parameter Sweep 不会误用上一次的结果。
 # phase_target = -10 rad 位于规定相位范围 [-pi,pi] 之外，可明确标记为无效。
@@ -16,7 +19,8 @@ R_total = -1;
 eta_target = -1;
 phase_target = -10;
 
-# 1) 监视器与单频数据检查。
+# 1) 监视器数据检查。光源可保持 880–940 nm 宽带；
+#    T、R 可各记录目标波长附近的窄带（例如 905 nm 附近 8 nm）。
 if ((havedata(T_monitor) == 0) | (havedata(R_monitor) == 0)) {
     ?"ERROR: T or R monitor does not contain simulation data.";
     break;
@@ -28,40 +32,58 @@ if (haveresult(T_monitor,"E") == 0) {
 
 f_T = getdata(T_monitor,"f");
 f_R = getdata(R_monitor,"f");
-if ((length(f_T) != 1) | (length(f_R) != 1)) {
-    ?"ERROR: this analysis is for one monochromatic FDTD run; T and R must each contain exactly one frequency point.";
-    break;
-}
-if (abs(f_T(1)-f_R(1)) > 1e-6*f_T(1)) {
-    ?"ERROR: T and R frequency points do not match.";
+if ((length(f_T) < 1) | (length(f_R) < 1)) {
+    ?"ERROR: T or R has no frequency samples.";
     break;
 }
 
-# 2) 按当前工作波长自动选择目标衍射级次 (x order, y order)。
-lambda0 = c/f_T(1);
-if (abs(lambda0-880e-9) <= lambda_tolerance) {
+# 2) 在监视器窄带内寻找实际采样的目标波长，并自动选择目标衍射级次 (x order, y order)。
+# 此处 find(lambda, target_lambda) 有意选择“最近采样点”；随后以 lambda_tolerance 验证。
+# 它不同于衍射级次索引，衍射级次仍在下文使用精确匹配。
+lambda_T = c/f_T;
+lambda_R = c/f_R;
+idx_880 = find(lambda_T,880e-9);
+idx_905 = find(lambda_T,905e-9);
+idx_940 = find(lambda_T,940e-9);
+if (abs(lambda_T(idx_880)-880e-9) <= lambda_tolerance) {
+    target_lambda = 880e-9;
     target_n = -1;
     target_m = 0;
 } else {
-    if (abs(lambda0-905e-9) <= lambda_tolerance) {
+    if (abs(lambda_T(idx_905)-905e-9) <= lambda_tolerance) {
+        target_lambda = 905e-9;
         target_n = 0;
         target_m = 0;
     } else {
-        if (abs(lambda0-940e-9) <= lambda_tolerance) {
+        if (abs(lambda_T(idx_940)-940e-9) <= lambda_tolerance) {
+            target_lambda = 940e-9;
             target_n = 1;
             target_m = 0;
         } else {
-            ?"ERROR: wavelength = "+num2str(lambda0*1e9)+" nm is not 880, 905, or 940 nm within tolerance.";
+            ?"ERROR: T monitor does not contain a sample within "+num2str(lambda_tolerance*1e9)+" nm of 880, 905, or 940 nm.";
             break;
         }
     }
+}
+idx_T = find(lambda_T,target_lambda);
+idx_R = find(lambda_R,target_lambda);
+lambda0 = lambda_T(idx_T);
+if ((abs(lambda_T(idx_T)-target_lambda) > lambda_tolerance) | (abs(lambda_R(idx_R)-target_lambda) > lambda_tolerance)) {
+    ?"ERROR: T and R must both sample the selected target wavelength.";
+    break;
+}
+if (abs(lambda_T(idx_T)-lambda_R(idx_R)) > lambda_tolerance) {
+    ?"ERROR: nearest T and R samples do not represent the same wavelength.";
+    break;
 }
 
 # 3) 有符号功率通量转为实际透射率与反射率。
 # T 位于 SiO2 侧、透射能流沿 -z，故 transmission(T) 应为负；
 # R 位于空气侧、反射能流沿 +z，故 transmission(R) 应为正。
-T_raw = pinch(transmission(T_monitor));
-R_raw = pinch(transmission(R_monitor));
+T_spectrum = transmission(T_monitor);
+R_spectrum = transmission(R_monitor);
+T_raw = pinch(T_spectrum(idx_T));
+R_raw = pinch(R_spectrum(idx_R));
 T_total = -T_raw;
 R_total = R_raw;
 if ((T_total < 0) | (R_total < 0)) {
@@ -74,9 +96,9 @@ if ((T_total > 1.05) | (R_total > 1.05)) {
 
 # 4) T 位于均匀 SiO2 中，默认投影取监视器中心材料和最大功率流方向。
 # 对透射监视器，此方向应为 -z。四个 grating 函数均使用相同的默认投影参数。
-G = grating(T_monitor,1);
-N = gratingn(T_monitor,1);
-M = gratingm(T_monitor,1);
+G = grating(T_monitor,idx_T);
+N = gratingn(T_monitor,idx_T);
+M = gratingm(T_monitor,idx_T);
 
 # 使用精确级次匹配；find(N,target_n) 会选择最近值，不能用于此处。
 idx_n = find(N == target_n);
@@ -101,7 +123,7 @@ if ((eta_target < -1e-12) | (eta_target > T_total+1e-6)) {
 # 5) gratingvector 返回 N x M x P x 3 复振幅数组；P=1，最后一维 2 对应 Ey。
 # 相位参考为 gratingvector 在 1 m 半球投影面上的复场参考，
 # 只适合在光源、监视器和投影设置保持一致时比较相对相位。
-Gv = gratingvector(T_monitor,1);
+Gv = gratingvector(T_monitor,idx_T);
 Ey_target = Gv(idx_n,idx_m,1,2);
 if (abs(Ey_target) < amplitude_tolerance) {
     ?"ERROR: target-order Ey amplitude is too small; phase_target is unreliable.";
