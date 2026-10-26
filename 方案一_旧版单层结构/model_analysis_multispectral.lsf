@@ -1,26 +1,22 @@
-# 顶层 model -> Analysis -> Script
-# 仅处理已有 T、R 监视器数据；不修改结构、材料、光源、边界或监视器。
-# 在 model -> Analysis -> Variables -> Results 中只添加：
-# T_total、R_total、eta_target、phase_target。
+# 用于 model -> Analysis -> Script；仅读取 T、R 监视器。
+# 在 Variables -> Results 中登记 T_total、R_total、eta_target、phase_target。
 
-# T、R 位于 model 下的 analysis group 内，必须使用完整对象路径。
+# 监视器位于 analysis group 中。
 T_monitor = "analysis group::T";
 R_monitor = "analysis group::R";
-lambda_tolerance = 0.25e-9;    # 目标波长与最近监视器采样点的最大允许偏差：0.25 nm
-amplitude_tolerance = 1e-8;    # 目标 Ey 振幅低于此值时，相位不可靠
+lambda_tolerance = 0.25e-9;    # 波长匹配容差：0.25 nm
+amplitude_tolerance = 1e-8;    # 提取相位所需的最小 Ey 振幅
 
-# 调试标记：每次顶层 Analysis Script 真正开始执行时，均应出现在 Script Output。
+# 用于确认分析脚本已运行。
 ?"model Analysis Script started.";
 
-# 先写入不可能的实数哨兵值。若分析异常中断，Parameter Sweep 不会误用上一次的结果。
-# phase_target = -10 rad 位于规定相位范围 [0,2*pi) 之外，可明确标记为无效。
+# 先设置无效值；有效相位范围为 [0,2*pi)。
 T_total = -1;
 R_total = -1;
 eta_target = -1;
 phase_target = -10;
 
-# 1) 监视器数据检查。光源可保持 880–940 nm 宽带；
-#    T、R 可各记录目标波长附近的窄带（例如 905 nm 附近 8 nm）。
+# 1) 检查监视器数据；T 必须记录电场。
 if ((havedata(T_monitor) == 0) | (havedata(R_monitor) == 0)) {
     ?"ERROR: T or R monitor does not contain simulation data.";
     break;
@@ -37,9 +33,8 @@ if ((length(f_T) < 1) | (length(f_R) < 1)) {
     break;
 }
 
-# 2) 在监视器窄带内寻找实际采样的目标波长，并自动选择目标衍射级次 (x order, y order)。
-# 此处 find(lambda, target_lambda) 有意选择“最近采样点”；随后以 lambda_tolerance 验证。
-# 它不同于衍射级次索引，衍射级次仍在下文使用精确匹配。
+# 2) 根据 T 的采样点选择目标波长和级次，优先顺序为 880、905、940 nm。
+# 波长取最近采样点，再检查 T、R 是否都落在容差内。
 lambda_T = c/f_T;
 lambda_R = c/f_R;
 idx_880 = find(lambda_T,880e-9);
@@ -77,9 +72,8 @@ if (abs(lambda_T(idx_T)-lambda_R(idx_R)) > lambda_tolerance) {
     break;
 }
 
-# 3) 有符号功率通量转为实际透射率与反射率。
-# T 位于 SiO2 侧、透射能流沿 -z，故 transmission(T) 应为负；
-# R 位于空气侧、反射能流沿 +z，故 transmission(R) 应为正。
+# 3) T 在 SiO2 侧沿 -z 透射，R 在空气侧沿 +z 反射。
+# 按能流方向修正 transmission 的符号。
 T_spectrum = transmission(T_monitor);
 R_spectrum = transmission(R_monitor);
 T_raw = pinch(T_spectrum(idx_T));
@@ -94,13 +88,12 @@ if ((T_total > 1.05) | (R_total > 1.05)) {
     ?"WARNING: T_total or R_total exceeds 1.05; check source normalization and monitor placement.";
 }
 
-# 4) T 位于均匀 SiO2 中，默认投影取监视器中心材料和最大功率流方向。
-# 对透射监视器，此方向应为 -z。四个 grating 函数均使用相同的默认投影参数。
+# 4) 在 T 所处的 SiO2 中投影；默认方向应为 -z。
 G = grating(T_monitor,idx_T);
 N = gratingn(T_monitor,idx_T);
 M = gratingm(T_monitor,idx_T);
 
-# 使用精确级次匹配；find(N,target_n) 会选择最近值，不能用于此处。
+# 衍射级次必须精确匹配。
 idx_n = find(N == target_n);
 idx_m = find(M == target_m);
 if ((idx_n == 0) | (idx_m == 0)) {
@@ -112,7 +105,7 @@ if ((length(idx_n) != 1) | (length(idx_m) != 1)) {
     break;
 }
 
-# G 是相对于总透射功率的级次份额；eta_target 是相对于入射功率的绝对效率。
+# 目标级次份额乘总透射率，得到入射功率归一化效率。
 G_target = G(idx_n,idx_m);
 eta_target = T_total*G_target;
 if ((eta_target < -1e-12) | (eta_target > T_total+1e-6)) {
@@ -120,18 +113,15 @@ if ((eta_target < -1e-12) | (eta_target > T_total+1e-6)) {
     break;
 }
 
-# 5) gratingvector 的通用返回形式为 N x M x P x 3。
-#    本脚本只传入一个频点 idx_T，单元素 P 维被压缩，故实际为 N x M x 3；
-#    第三维索引 2 对应 Ey。
-# 相位参考为 gratingvector 在 1 m 半球投影面上的复场参考，
-# 只适合在光源、监视器和投影设置保持一致时比较相对相位。
+# 5) 单频点 gratingvector 的第三维索引 2 为 Ey。
+# 相位参考面在投影半球 1 m 处，仅比较设置相同的仿真。
 Gv = gratingvector(T_monitor,idx_T);
 Ey_target = Gv(idx_n,idx_m,2);
 if (abs(Ey_target) < amplitude_tolerance) {
     ?"ERROR: target-order Ey amplitude is too small; phase_target is unreliable.";
     break;
 }
-# 将 gratingvector 返回的相位由 [-pi,pi] 映射到 [0,2*pi)。
+# 将相位映射到 [0,2*pi)。
 phase_target = angle(Ey_target);
 if (phase_target < 0) {
     phase_target = phase_target + 2*pi;
