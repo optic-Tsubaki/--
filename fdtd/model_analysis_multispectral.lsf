@@ -100,6 +100,8 @@ if ((T_total > 1.05) | (R_total > 1.05)) {
 G = grating(T_monitor,idx_T,1,1);
 N = gratingn(T_monitor,idx_T,1,1);
 M = gratingm(T_monitor,idx_T,1,1);
+u1 = gratingu1(T_monitor,idx_T,1,1);
+u2 = gratingu2(T_monitor,idx_T,1,1);
 
 # 使用精确级次匹配；find(N,target_n) 会选择最近值，不能用于此处。
 idx_n = find(N == target_n);
@@ -134,5 +136,8 @@ if (abs(Ey_target) < amplitude_tolerance) {
 }
 phase_target = angle(Ey_target);
 
-?"lambda = "+num2str(lambda0*1e9)+" nm; target order = ("+num2str(target_n)+","+num2str(target_m)+")";
+ux_target = u1(idx_n);
+uy_target = u2(idx_m);
+?"lambda = "+num2str(lambda0*1e9)+" nm; selected transmitted order = ("+num2str(N(idx_n))+","+num2str(M(idx_m))+")";
+?"target output direction cosines in air: ux = "+num2str(ux_target)+", uy = "+num2str(uy_target)+" (normal output requires ux approximately 0 and uy approximately 0)";
 ?"T_total = "+num2str(T_total)+", R_total = "+num2str(R_total)+", eta_target = "+num2str(eta_target)+", phase_target = "+num2str(phase_target)+" rad";
