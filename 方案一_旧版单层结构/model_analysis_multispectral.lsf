@@ -13,7 +13,7 @@ amplitude_tolerance = 1e-8;    # 目标 Ey 振幅低于此值时，相位不可�
 ?"model Analysis Script started.";
 
 # 先写入不可能的实数哨兵值。若分析异常中断，Parameter Sweep 不会误用上一次的结果。
-# phase_target = -10 rad 位于规定相位范围 [-pi,pi] 之外，可明确标记为无效。
+# phase_target = -10 rad 位于规定相位范围 [0,2*pi) 之外，可明确标记为无效。
 T_total = -1;
 R_total = -1;
 eta_target = -1;
@@ -131,7 +131,11 @@ if (abs(Ey_target) < amplitude_tolerance) {
     ?"ERROR: target-order Ey amplitude is too small; phase_target is unreliable.";
     break;
 }
+# 将 gratingvector 返回的相位由 [-pi,pi] 映射到 [0,2*pi)。
 phase_target = angle(Ey_target);
+if (phase_target < 0) {
+    phase_target = phase_target + 2*pi;
+}
 
 ?"lambda = "+num2str(lambda0*1e9)+" nm; target order = ("+num2str(target_n)+","+num2str(target_m)+")";
 ?"T_total = "+num2str(T_total)+", R_total = "+num2str(R_total)+", eta_target = "+num2str(eta_target)+", phase_target = "+num2str(phase_target)+" rad";
