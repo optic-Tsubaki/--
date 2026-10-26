@@ -1,0 +1,143 @@
+# 顶层 model -> Analysis -> Script
+# 第二层模型：光从下方 SiO2 沿 +z 入射，经 TiO2 双柱后透射至上方空气。
+# 仅处理已有 T、R 监视器数据；不修改结构、材料、光源、边界或监视器。
+# 在 model -> Analysis -> Variables -> Results 中只添加：
+# T_total、R_total、eta_target、phase_target。
+
+# T、R 位于 model 下的 analysis group 内，必须使用完整对象路径。
+T_monitor = "analysis group::T";
+R_monitor = "analysis group::R";
+lambda_tolerance = 0.25e-9;    # 目标波长与最近监视器采样点的最大允许偏差：0.25 nm
+amplitude_tolerance = 1e-8;    # 目标 Ey 振幅低于此值时，相位不可靠
+
+# 调试标记：每次顶层 Analysis Script 真正开始执行时，均应出现在 Script Output。
+?"model Analysis Script started.";
+
+# 先写入不可能的实数哨兵值。若分析异常中断，Parameter Sweep 不会误用上一次的结果。
+# phase_target = -10 rad 位于规定相位范围 [-pi,pi] 之外，可明确标记为无效。
+T_total = -1;
+R_total = -1;
+eta_target = -1;
+phase_target = -10;
+
+# 1) 监视器数据检查。光源可保持 880–940 nm 宽带；
+#    T、R 可各记录目标波长附近的窄带（例如 905 nm 附近 8 nm）。
+if ((havedata(T_monitor) == 0) | (havedata(R_monitor) == 0)) {
+    ?"ERROR: T or R monitor does not contain simulation data.";
+    break;
+}
+if (haveresult(T_monitor,"E") == 0) {
+    ?"ERROR: T monitor must record E-field for gratingvector phase extraction.";
+    break;
+}
+
+f_T = getdata(T_monitor,"f");
+f_R = getdata(R_monitor,"f");
+if ((length(f_T) < 1) | (length(f_R) < 1)) {
+    ?"ERROR: T or R has no frequency samples.";
+    break;
+}
+
+# 2) 在监视器窄带内寻找实际采样的目标波长，并自动选择目标衍射级次 (x order, y order)。
+# 此处 find(lambda, target_lambda) 有意选择“最近采样点”；随后以 lambda_tolerance 验证。
+# 它不同于衍射级次索引，衍射级次仍在下文使用精确匹配。
+lambda_T = c/f_T;
+lambda_R = c/f_R;
+idx_880 = find(lambda_T,880e-9);
+idx_905 = find(lambda_T,905e-9);
+idx_940 = find(lambda_T,940e-9);
+if (abs(lambda_T(idx_880)-880e-9) <= lambda_tolerance) {
+    target_lambda = 880e-9;
+    target_n = -1;
+    target_m = 0;
+} else {
+    if (abs(lambda_T(idx_905)-905e-9) <= lambda_tolerance) {
+        target_lambda = 905e-9;
+        target_n = 0;
+        target_m = 0;
+    } else {
+        if (abs(lambda_T(idx_940)-940e-9) <= lambda_tolerance) {
+            target_lambda = 940e-9;
+            target_n = 1;
+            target_m = 0;
+        } else {
+            ?"ERROR: T monitor does not contain a sample within "+num2str(lambda_tolerance*1e9)+" nm of 880, 905, or 940 nm.";
+            break;
+        }
+    }
+}
+idx_T = find(lambda_T,target_lambda);
+idx_R = find(lambda_R,target_lambda);
+lambda0 = lambda_T(idx_T);
+if ((abs(lambda_T(idx_T)-target_lambda) > lambda_tolerance) | (abs(lambda_R(idx_R)-target_lambda) > lambda_tolerance)) {
+    ?"ERROR: T and R must both sample the selected target wavelength.";
+    break;
+}
+if (abs(lambda_T(idx_T)-lambda_R(idx_R)) > lambda_tolerance) {
+    ?"ERROR: nearest T and R samples do not represent the same wavelength.";
+    break;
+}
+
+# 3) 有符号功率通量转为实际透射率与反射率。
+# 当前第二层模型中：T 位于上方空气侧，透射能流沿 +z；
+# R 位于下方 SiO2 入射侧、光源背向器件的一侧，反射能流沿 -z。
+T_spectrum = transmission(T_monitor);
+R_spectrum = transmission(R_monitor);
+T_raw = pinch(T_spectrum(idx_T));
+R_raw = pinch(R_spectrum(idx_R));
+T_total = T_raw;
+R_total = -R_raw;
+if ((T_total < 0) | (R_total < 0)) {
+    ?"ERROR: unexpected T/R sign. Check z-normal monitor orientations and monitor positions.";
+    break;
+}
+if ((T_total > 1.05) | (R_total > 1.05)) {
+    ?"WARNING: T_total or R_total exceeds 1.05; check source normalization and monitor placement.";
+}
+
+# 4) T 位于均匀空气中。投影介质折射率设为 1，透射投影方向明确为 +z。
+# 四个 grating 函数必须使用完全一致的频点、投影介质和方向。
+G = grating(T_monitor,idx_T,1,1);
+N = gratingn(T_monitor,idx_T,1,1);
+M = gratingm(T_monitor,idx_T,1,1);
+u1 = gratingu1(T_monitor,idx_T,1,1);
+u2 = gratingu2(T_monitor,idx_T,1,1);
+
+# 使用精确级次匹配；find(N,target_n) 会选择最近值，不能用于此处。
+idx_n = find(N == target_n);
+idx_m = find(M == target_m);
+if ((idx_n == 0) | (idx_m == 0)) {
+    ?"ERROR: target order ("+num2str(target_n)+","+num2str(target_m)+") does not exist.";
+    break;
+}
+if ((length(idx_n) != 1) | (length(idx_m) != 1)) {
+    ?"ERROR: target order ("+num2str(target_n)+","+num2str(target_m)+") is not a unique propagating order.";
+    break;
+}
+
+# G 是相对于总透射功率的级次份额；eta_target 是相对于入射功率的绝对效率。
+G_target = G(idx_n,idx_m);
+eta_target = T_total*G_target;
+if ((eta_target < -1e-12) | (eta_target > T_total+1e-6)) {
+    ?"ERROR: target-order efficiency is inconsistent with total transmission.";
+    break;
+}
+
+# 5) gratingvector 的通用返回形式为 N x M x P x 3。
+#    本脚本只传入一个频点 idx_T，单元素 P 维被压缩，故实际为 N x M x 3；
+#    第三维索引 2 对应 Ey。
+# 相位参考为 gratingvector 在 1 m 半球投影面上的复场参考，
+# 只适合在光源、监视器和投影设置保持一致时比较相对相位。
+Gv = gratingvector(T_monitor,idx_T,1,1);
+Ey_target = Gv(idx_n,idx_m,2);
+if (abs(Ey_target) < amplitude_tolerance) {
+    ?"ERROR: target-order Ey amplitude is too small; phase_target is unreliable.";
+    break;
+}
+phase_target = angle(Ey_target);
+
+ux_target = u1(idx_n);
+uy_target = u2(idx_m);
+?"lambda = "+num2str(lambda0*1e9)+" nm; selected transmitted order = ("+num2str(N(idx_n))+","+num2str(M(idx_m))+")";
+?"target output direction cosines in air: ux = "+num2str(ux_target)+", uy = "+num2str(uy_target)+" (normal output requires ux approximately 0 and uy approximately 0)";
+?"T_total = "+num2str(T_total)+", R_total = "+num2str(R_total)+", eta_target = "+num2str(eta_target)+", phase_target = "+num2str(phase_target)+" rad";
