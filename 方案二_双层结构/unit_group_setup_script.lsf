@@ -40,6 +40,7 @@ if ((l1_y_min < substrate_y_min-tolerance) | (l1_y_max > substrate_y_max+toleran
 if (geometry_is_valid == 1) {
     # 左柱 l1：其中心坐标由 User Properties l1_x、l1_y 给定。
     select("unit group::TiO2_l1");
+    set("enabled",1);
     set("x span",l1_x_span);
     set("y span",l1_y_span);
     set("z span",h1);
@@ -49,6 +50,7 @@ if (geometry_is_valid == 1) {
 
     # 右柱 l2：由左柱右边缘、gap 与自身宽度自动定位。
     select("unit group::TiO2_l2");
+    set("enabled",1);
     set("x span",l2_x_span);
     set("y span",l2_y_span);
     set("z span",h2);

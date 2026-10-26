@@ -19,8 +19,13 @@ R_total = -1;
 eta_target = -1;
 phase_target = -10;
 
-# 1) 监视器数据检查。光源可保持 880–940 nm 宽带；
-#    T、R 可各记录目标波长附近的窄带（例如 905 nm 附近 8 nm）。
+# 1) 几何与监视器数据检查。每次只仿真一个目标波长；
+#    例如 905 nm 用 901–909 nm 光源，T、R 各记录 5 个频点。
+#    无效几何会禁用柱体，因此不能把裸基底结果当作器件结果。
+if ((getnamed("unit group::TiO2_l1","enabled") == 0) | (getnamed("unit group::TiO2_l2","enabled") == 0)) {
+    ?"ERROR: TiO2 pillars are disabled; check unit group geometry before analysis.";
+    break;
+}
 if ((havedata(T_monitor) == 0) | (havedata(R_monitor) == 0)) {
     ?"ERROR: T or R monitor does not contain simulation data.";
     break;
@@ -37,43 +42,47 @@ if ((length(f_T) < 1) | (length(f_R) < 1)) {
     break;
 }
 
-# 2) 在监视器窄带内寻找实际采样的目标波长，并自动选择目标衍射级次 (x order, y order)。
-# 此处 find(lambda, target_lambda) 有意选择“最近采样点”；随后以 lambda_tolerance 验证。
-# 它不同于衍射级次索引，衍射级次仍在下文使用精确匹配。
+# 2) 用 T 的实际采样点识别唯一目标波长，再检查 R 的最近采样点。
+# 监视器默认按频率等间距取点；5 个频点不一定恰好包含 905 nm。
+# find(lambda,target_lambda) 取最近采样点；衍射级次仍在下文精确匹配。
 lambda_T = c/f_T;
 lambda_R = c/f_R;
 idx_880 = find(lambda_T,880e-9);
 idx_905 = find(lambda_T,905e-9);
 idx_940 = find(lambda_T,940e-9);
+target_count = 0;
 if (abs(lambda_T(idx_880)-880e-9) <= lambda_tolerance) {
     target_lambda = 880e-9;
     target_n = -1;
     target_m = 0;
-} else {
-    if (abs(lambda_T(idx_905)-905e-9) <= lambda_tolerance) {
-        target_lambda = 905e-9;
-        target_n = 0;
-        target_m = 0;
-    } else {
-        if (abs(lambda_T(idx_940)-940e-9) <= lambda_tolerance) {
-            target_lambda = 940e-9;
-            target_n = 1;
-            target_m = 0;
-        } else {
-            ?"ERROR: T monitor does not contain a sample within "+num2str(lambda_tolerance*1e9)+" nm of 880, 905, or 940 nm.";
-            break;
-        }
-    }
+    target_count = target_count+1;
+}
+if (abs(lambda_T(idx_905)-905e-9) <= lambda_tolerance) {
+    target_lambda = 905e-9;
+    target_n = 0;
+    target_m = 0;
+    target_count = target_count+1;
+}
+if (abs(lambda_T(idx_940)-940e-9) <= lambda_tolerance) {
+    target_lambda = 940e-9;
+    target_n = 1;
+    target_m = 0;
+    target_count = target_count+1;
+}
+if (target_count != 1) {
+    ?"ERROR: T must sample exactly one target wavelength among 880, 905, 940 nm; matches = "+num2str(target_count)+".";
+    ?"T monitor: "+num2str(length(f_T))+" points, wavelength range "+num2str(min(lambda_T)*1e9)+" to "+num2str(max(lambda_T)*1e9)+" nm.";
+    break;
 }
 idx_T = find(lambda_T,target_lambda);
 idx_R = find(lambda_R,target_lambda);
 lambda0 = lambda_T(idx_T);
 if ((abs(lambda_T(idx_T)-target_lambda) > lambda_tolerance) | (abs(lambda_R(idx_R)-target_lambda) > lambda_tolerance)) {
-    ?"ERROR: T and R must both sample the selected target wavelength.";
+    ?"ERROR: target = "+num2str(target_lambda*1e9)+" nm; nearest T = "+num2str(lambda_T(idx_T)*1e9)+" nm; nearest R = "+num2str(lambda_R(idx_R)*1e9)+" nm. Both must be within "+num2str(lambda_tolerance*1e9)+" nm.";
     break;
 }
 if (abs(lambda_T(idx_T)-lambda_R(idx_R)) > lambda_tolerance) {
-    ?"ERROR: nearest T and R samples do not represent the same wavelength.";
+    ?"ERROR: nearest T and R samples differ by more than "+num2str(lambda_tolerance*1e9)+" nm.";
     break;
 }
 
@@ -84,14 +93,14 @@ T_spectrum = transmission(T_monitor);
 R_spectrum = transmission(R_monitor);
 T_raw = pinch(T_spectrum(idx_T));
 R_raw = pinch(R_spectrum(idx_R));
-T_total = -T_raw;
-R_total = R_raw;
-if ((T_total < 0) | (R_total < 0)) {
+T_candidate = -T_raw;
+R_candidate = R_raw;
+if ((T_candidate < 0) | (R_candidate < 0)) {
     ?"ERROR: unexpected T/R sign. Check z-normal monitor orientations and monitor positions.";
     break;
 }
-if ((T_total > 1.05) | (R_total > 1.05)) {
-    ?"WARNING: T_total or R_total exceeds 1.05; check source normalization and monitor placement.";
+if ((T_candidate > 1.05) | (R_candidate > 1.05) | (T_candidate+R_candidate > 1.05)) {
+    ?"WARNING: T, R, or T+R exceeds 1.05; check source normalization and monitor placement.";
 }
 
 # 4) T 位于均匀 SiO2 中，默认投影取监视器中心材料和最大功率流方向。
@@ -114,8 +123,12 @@ if ((length(idx_n) != 1) | (length(idx_m) != 1)) {
 
 # G 是相对于总透射功率的级次份额；eta_target 是相对于入射功率的绝对效率。
 G_target = G(idx_n,idx_m);
-eta_target = T_total*G_target;
-if ((eta_target < -1e-12) | (eta_target > T_total+1e-6)) {
+if ((G_target < -1e-12) | (G_target > 1+1e-6)) {
+    ?"ERROR: target-order fraction is outside [0,1].";
+    break;
+}
+eta_candidate = T_candidate*G_target;
+if ((eta_candidate < -1e-12) | (eta_candidate > T_candidate+1e-6)) {
     ?"ERROR: target-order efficiency is inconsistent with total transmission.";
     break;
 }
@@ -132,10 +145,15 @@ if (abs(Ey_target) < amplitude_tolerance) {
     break;
 }
 # 将 gratingvector 返回的相位由 [-pi,pi] 映射到 [0,2*pi)。
-phase_target = angle(Ey_target);
-if (phase_target < 0) {
-    phase_target = phase_target + 2*pi;
+phase_candidate = angle(Ey_target);
+if (phase_candidate < 0) {
+    phase_candidate = phase_candidate + 2*pi;
 }
 
-?"lambda = "+num2str(lambda0*1e9)+" nm; target order = ("+num2str(target_n)+","+num2str(target_m)+")";
+# 全部检查通过后再发布 Results，错误分支始终保留无效哨兵值。
+T_total = T_candidate;
+R_total = R_candidate;
+eta_target = eta_candidate;
+phase_target = phase_candidate;
+?"target = "+num2str(target_lambda*1e9)+" nm; T sample = "+num2str(lambda0*1e9)+" nm; R sample = "+num2str(lambda_R(idx_R)*1e9)+" nm; target order = ("+num2str(target_n)+","+num2str(target_m)+")";
 ?"T_total = "+num2str(T_total)+", R_total = "+num2str(R_total)+", eta_target = "+num2str(eta_target)+", phase_target = "+num2str(phase_target)+" rad";
